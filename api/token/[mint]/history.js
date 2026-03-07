@@ -42,17 +42,33 @@ export default async function handler(req, res) {
       }
     }
 
+    // Aggregate into OHLC candles
+    const candleMinutes = { '1h': 1, '6h': 5, '24h': 15, '7d': 60 }
+    const bucketSize = (candleMinutes[range] || 15) * 60
+    const buckets = {}
+    for (const r of rows) {
+      const ts = Math.floor(new Date(r.timestamp).getTime() / 1000)
+      const bucketTime = Math.floor(ts / bucketSize) * bucketSize
+      const price = parseFloat(r.price)
+      const vol = parseFloat(r.volume) || 0
+      if (!buckets[bucketTime]) {
+        buckets[bucketTime] = { time: bucketTime, open: price, high: price, low: price, close: price, volume: vol }
+      } else {
+        const b = buckets[bucketTime]
+        if (price > b.high) b.high = price
+        if (price < b.low) b.low = price
+        b.close = price
+        b.volume += vol
+      }
+    }
+    const candles = Object.values(buckets).sort((a, b) => a.time - b.time)
+
     return res.status(200).json({
       mint,
       range,
       priceChange: Math.round(priceChange * 100) / 100,
-      dataPoints: rows.length,
-      history: rows.map(r => ({
-        price: parseFloat(r.price),
-        marketCap: parseFloat(r.market_cap),
-        volume: parseFloat(r.volume),
-        time: Math.floor(new Date(r.timestamp).getTime() / 1000),
-      })),
+      dataPoints: candles.length,
+      history: candles,
     })
   } catch (error) {
     console.error('History error:', error)

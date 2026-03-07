@@ -90,8 +90,10 @@ export default function TokenDetail({ token, onBack }) {
         setChartData(
           (data.history || []).map(p => ({
             time: p.time,
-            value: p.price,
-            volume: p.volume || 0,
+            open: p.open,
+            high: p.high,
+            low: p.low,
+            close: p.close,
           }))
         )
       } catch {

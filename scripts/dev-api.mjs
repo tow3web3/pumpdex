@@ -158,16 +158,32 @@ app.get('/api/token/:mint/history', async (req, res) => {
       const last = parseFloat(data[data.length - 1].price)
       if (first > 0) priceChange = ((last - first) / first) * 100
     }
+    // Aggregate into OHLC candles
+    const candleMinutes = { '1h': 1, '6h': 5, '24h': 15, '7d': 60 }
+    const bucketSize = (candleMinutes[range] || 15) * 60 // seconds
+    const buckets = {}
+    for (const r of data) {
+      const ts = Math.floor(new Date(r.timestamp).getTime() / 1000)
+      const bucketTime = Math.floor(ts / bucketSize) * bucketSize
+      const price = parseFloat(r.price)
+      const vol = parseFloat(r.volume) || 0
+      if (!buckets[bucketTime]) {
+        buckets[bucketTime] = { time: bucketTime, open: price, high: price, low: price, close: price, volume: vol }
+      } else {
+        const b = buckets[bucketTime]
+        if (price > b.high) b.high = price
+        if (price < b.low) b.low = price
+        b.close = price
+        b.volume += vol
+      }
+    }
+    const candles = Object.values(buckets).sort((a, b) => a.time - b.time)
+
     res.json({
       mint: req.params.mint, range,
       priceChange: Math.round(priceChange * 100) / 100,
-      dataPoints: data.length,
-      history: data.map(r => ({
-        price: parseFloat(r.price),
-        marketCap: parseFloat(r.market_cap),
-        volume: parseFloat(r.volume),
-        time: Math.floor(new Date(r.timestamp).getTime() / 1000),
-      })),
+      dataPoints: candles.length,
+      history: candles,
     })
   } catch (e) {
     res.status(500).json({ error: e.message })

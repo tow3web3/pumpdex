@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { createChart, ColorType, AreaSeries } from 'lightweight-charts'
+import { createChart, ColorType, CandlestickSeries } from 'lightweight-charts'
 import './PriceChart.css'
 
 export default function PriceChart({ data, loading, height = 300 }) {
@@ -51,21 +51,13 @@ export default function PriceChart({ data, loading, height = 300 }) {
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
     })
 
-    const isUp = data.length >= 2 && data[data.length - 1].value >= data[0].value
-    const upColor = '#00ff88'
-    const downColor = '#ff4466'
-    const mainColor = isUp ? upColor : downColor
-
-    const areaSeries = chart.addSeries(AreaSeries, {
-      lineColor: mainColor,
-      topColor: isUp ? 'rgba(0,255,136,0.18)' : 'rgba(255,68,102,0.18)',
-      bottomColor: 'transparent',
-      lineWidth: 2,
-      lineType: 2,
-      crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 4,
-      crosshairMarkerBorderColor: mainColor,
-      crosshairMarkerBackgroundColor: '#0a0a12',
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: '#00ff88',
+      downColor: '#ff4466',
+      borderUpColor: '#00ff88',
+      borderDownColor: '#ff4466',
+      wickUpColor: '#00ff88',
+      wickDownColor: '#ff4466',
       priceFormat: {
         type: 'price',
         precision: 8,
@@ -74,11 +66,10 @@ export default function PriceChart({ data, loading, height = 300 }) {
       lastValueVisible: true,
       priceLineVisible: true,
       priceLineWidth: 1,
-      priceLineColor: isUp ? 'rgba(0,255,136,0.4)' : 'rgba(255,68,102,0.4)',
       priceLineStyle: 2,
     })
 
-    areaSeries.setData(data)
+    candleSeries.setData(data)
     chart.timeScale().fitContent()
     chartRef.current = chart
 
