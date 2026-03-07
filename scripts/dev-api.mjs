@@ -69,29 +69,54 @@ app.get('/api/tokens', async (req, res) => {
 // Helper: compute price changes from history for a list of mints
 async function getPriceChanges(mints) {
   if (!mints.length) return {}
-  const placeholders = mints.map((_, i) => `$${i + 1}`).join(',')
-  const intervals = [
-    { key: 'change_5m', interval: '5 minutes' },
-    { key: 'change_1h', interval: '1 hour' },
-    { key: 'change_6h', interval: '6 hours' },
-    { key: 'change_24h', interval: '24 hours' },
-  ]
   const result = {}
   for (const mint of mints) result[mint] = {}
 
-  for (const { key, interval } of intervals) {
-    try {
-      const rows = await sql.query(
-        `SELECT DISTINCT ON (mint) mint, price FROM price_history
-         WHERE mint IN (${placeholders}) AND timestamp <= NOW() - INTERVAL '${interval}'
-         ORDER BY mint, timestamp DESC`,
-        mints
-      )
-      for (const row of rows) {
-        result[row.mint][key] = parseFloat(row.price)
+  try {
+    const placeholders = mints.map((_, i) => `$${i + 1}`).join(',')
+    const rows = await sql.query(
+      `SELECT mint, price, timestamp FROM price_history
+       WHERE mint IN (${placeholders})
+       ORDER BY mint, timestamp DESC`,
+      mints
+    )
+
+    const byMint = {}
+    for (const r of rows) {
+      if (!byMint[r.mint]) byMint[r.mint] = []
+      byMint[r.mint].push({ price: parseFloat(r.price), ts: new Date(r.timestamp).getTime() })
+    }
+
+    const now = Date.now()
+    const targets = [
+      { key: 'change_5m', ms: 5 * 60 * 1000 },
+      { key: 'change_1h', ms: 60 * 60 * 1000 },
+      { key: 'change_6h', ms: 6 * 60 * 60 * 1000 },
+      { key: 'change_24h', ms: 24 * 60 * 60 * 1000 },
+    ]
+
+    for (const mint of mints) {
+      const points = byMint[mint]
+      if (!points || points.length < 2) continue
+
+      for (const { key, ms } of targets) {
+        const targetTime = now - ms
+        let closest = null
+        let minDiff = Infinity
+        for (const p of points) {
+          const diff = Math.abs(p.ts - targetTime)
+          if (diff < minDiff) { minDiff = diff; closest = p }
+        }
+        const maxDrift = Math.max(ms * 0.5, 30 * 60 * 1000)
+        if (closest && minDiff < maxDrift) {
+          result[mint][key] = closest.price
+        }
       }
-    } catch {}
+    }
+  } catch (e) {
+    console.error('getPriceChanges error:', e.message)
   }
+
   return result
 }
 
