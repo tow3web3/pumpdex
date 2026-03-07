@@ -1,4 +1,4 @@
-import { getDb } from '../_db.js'
+import { getDb, getPriceChanges, enrichWithChanges } from '../_db.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -19,7 +19,9 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'Token not found' })
     }
 
-    return res.status(200).json(rows[0])
+    const t = rows[0]
+    const histPrices = await getPriceChanges(sql, [t.mint])
+    return res.status(200).json(enrichWithChanges(t, histPrices))
   } catch (error) {
     console.error('Token fetch error:', error)
     return res.status(500).json({ error: error.message })

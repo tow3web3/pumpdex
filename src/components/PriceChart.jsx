@@ -16,45 +16,66 @@ export default function PriceChart({ data, loading, height = 300 }) {
     }
 
     const chart = createChart(containerRef.current, {
+      width: containerRef.current.clientWidth,
+      height,
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: '#555570',
-        fontFamily: "'Inter', sans-serif",
-        fontSize: 11,
+        textColor: '#6b6b80',
+        fontFamily: "'JetBrains Mono', 'Inter', monospace",
+        fontSize: 10,
       },
       grid: {
-        vertLines: { color: 'rgba(255,255,255,0.03)' },
-        horzLines: { color: 'rgba(255,255,255,0.03)' },
+        vertLines: { visible: false },
+        horzLines: { color: 'rgba(255,255,255,0.04)', style: 1 },
       },
       crosshair: {
-        vertLine: { color: 'rgba(0,255,136,0.3)', width: 1, style: 2 },
-        horzLine: { color: 'rgba(0,255,136,0.3)', width: 1, style: 2 },
+        mode: 0,
+        vertLine: { color: 'rgba(255,255,255,0.15)', width: 1, style: 3, labelBackgroundColor: '#1a1a2e' },
+        horzLine: { color: 'rgba(255,255,255,0.15)', width: 1, style: 3, labelBackgroundColor: '#1a1a2e' },
       },
       rightPriceScale: {
-        borderColor: 'rgba(255,255,255,0.05)',
-        scaleMargins: { top: 0.1, bottom: 0.1 },
+        borderVisible: false,
+        scaleMargins: { top: 0.08, bottom: 0.08 },
+        entireTextOnly: true,
       },
       timeScale: {
-        borderColor: 'rgba(255,255,255,0.05)',
+        borderVisible: false,
         timeVisible: true,
         secondsVisible: false,
+        rightOffset: 5,
+        barSpacing: 8,
+        fixLeftEdge: true,
+        fixRightEdge: true,
       },
-      handleScroll: true,
-      handleScale: true,
+      handleScroll: { mouseWheel: true, pressedMouseMove: true },
+      handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
     })
 
     const isUp = data.length >= 2 && data[data.length - 1].value >= data[0].value
+    const upColor = '#00ff88'
+    const downColor = '#ff4466'
+    const mainColor = isUp ? upColor : downColor
 
     const areaSeries = chart.addSeries(AreaSeries, {
-      lineColor: isUp ? '#00ff88' : '#ff4466',
-      topColor: isUp ? 'rgba(0,255,136,0.2)' : 'rgba(255,68,102,0.2)',
-      bottomColor: isUp ? 'rgba(0,255,136,0.01)' : 'rgba(255,68,102,0.01)',
+      lineColor: mainColor,
+      topColor: isUp ? 'rgba(0,255,136,0.18)' : 'rgba(255,68,102,0.18)',
+      bottomColor: 'transparent',
       lineWidth: 2,
+      lineType: 2,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 4,
+      crosshairMarkerBorderColor: mainColor,
+      crosshairMarkerBackgroundColor: '#0a0a12',
       priceFormat: {
         type: 'price',
         precision: 8,
         minMove: 0.00000001,
       },
+      lastValueVisible: true,
+      priceLineVisible: true,
+      priceLineWidth: 1,
+      priceLineColor: isUp ? 'rgba(0,255,136,0.4)' : 'rgba(255,68,102,0.4)',
+      priceLineStyle: 2,
     })
 
     areaSeries.setData(data)
@@ -77,7 +98,7 @@ export default function PriceChart({ data, loading, height = 300 }) {
         chartRef.current = null
       }
     }
-  }, [data])
+  }, [data, height])
 
   return (
     <div className="price-chart">

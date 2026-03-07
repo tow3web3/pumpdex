@@ -42,19 +42,75 @@ app.get('/api/tokens', async (req, res) => {
     const rows = await sql.query(query, params)
     const countResult = await sql`SELECT COUNT(*) as total FROM tokens`
 
-    res.json({ tokens: rows, total: parseInt(countResult[0].total) })
+    // Compute per-timeframe price changes from history
+    const mints = rows.map(r => r.mint)
+    const histPrices = await getPriceChanges(mints)
+
+    const enriched = rows.map(t => {
+      const currentPrice = parseFloat(t.price) || 0
+      const hp = histPrices[t.mint] || {}
+      const pctChange = (old) => old && old > 0 ? ((currentPrice - old) / old) * 100 : 0
+      return {
+        ...t,
+        change_5m: Math.round(pctChange(hp.change_5m) * 100) / 100,
+        change_1h: Math.round(pctChange(hp.change_1h) * 100) / 100,
+        change_6h: Math.round(pctChange(hp.change_6h) * 100) / 100,
+        change_24h: Math.round(pctChange(hp.change_24h) * 100) / 100,
+      }
+    })
+
+    res.json({ tokens: enriched, total: parseInt(countResult[0].total) })
   } catch (e) {
     console.error('Token query error:', e.message)
     res.status(500).json({ error: e.message })
   }
 })
 
+// Helper: compute price changes from history for a list of mints
+async function getPriceChanges(mints) {
+  if (!mints.length) return {}
+  const placeholders = mints.map((_, i) => `$${i + 1}`).join(',')
+  const intervals = [
+    { key: 'change_5m', interval: '5 minutes' },
+    { key: 'change_1h', interval: '1 hour' },
+    { key: 'change_6h', interval: '6 hours' },
+    { key: 'change_24h', interval: '24 hours' },
+  ]
+  const result = {}
+  for (const mint of mints) result[mint] = {}
+
+  for (const { key, interval } of intervals) {
+    try {
+      const rows = await sql.query(
+        `SELECT DISTINCT ON (mint) mint, price FROM price_history
+         WHERE mint IN (${placeholders}) AND timestamp <= NOW() - INTERVAL '${interval}'
+         ORDER BY mint, timestamp DESC`,
+        mints
+      )
+      for (const row of rows) {
+        result[row.mint][key] = parseFloat(row.price)
+      }
+    } catch {}
+  }
+  return result
+}
+
 // GET /api/token/:mint
 app.get('/api/token/:mint', async (req, res) => {
   try {
     const rows = await sql`SELECT * FROM tokens WHERE mint = ${req.params.mint}`
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' })
-    res.json(rows[0])
+    const t = rows[0]
+    const hp = (await getPriceChanges([t.mint]))[t.mint] || {}
+    const currentPrice = parseFloat(t.price) || 0
+    const pctChange = (old) => old && old > 0 ? Math.round(((currentPrice - old) / old) * 10000) / 100 : 0
+    res.json({
+      ...t,
+      change_5m: pctChange(hp.change_5m),
+      change_1h: pctChange(hp.change_1h),
+      change_6h: pctChange(hp.change_6h),
+      change_24h: pctChange(hp.change_24h),
+    })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }

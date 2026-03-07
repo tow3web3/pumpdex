@@ -293,10 +293,10 @@ export default function Dashboard({ onSelectToken }) {
                 <span className="dash__col dash__col--muted">{timeAgo(token.created_at)}</span>
                 <span className="dash__col dash__col--mono">{formatCompact(token.volume_24h)}</span>
                 <span className="dash__col dash__col--mono">{formatNum(token.holder_count)}</span>
-                <ChangeCell value={token.price_change_24h} />
-                <ChangeCell value={token.price_change_24h} />
-                <ChangeCell value={token.price_change_24h} />
-                <ChangeCell value={token.price_change_24h} />
+                <ChangeCell value={token.change_5m} />
+                <ChangeCell value={token.change_1h} />
+                <ChangeCell value={token.change_6h} />
+                <ChangeCell value={token.change_24h} />
                 <span className="dash__col dash__col--mono">{formatCompact(token.liquidity)}</span>
                 <span className="dash__col dash__col--mono dash__col--mcap">{formatCompact(token.market_cap)}</span>
               </div>

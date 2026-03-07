@@ -1,4 +1,4 @@
-import { getDb } from './_db.js'
+import { getDb, getPriceChanges, enrichWithChanges } from './_db.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -45,8 +45,12 @@ export default async function handler(req, res) {
     const rows = await sql.query(query, params)
     const countResult = await sql`SELECT COUNT(*) as total FROM tokens`
 
+    const mints = rows.map(r => r.mint)
+    const histPrices = await getPriceChanges(sql, mints)
+    const enriched = rows.map(t => enrichWithChanges(t, histPrices))
+
     return res.status(200).json({
-      tokens: rows,
+      tokens: enriched,
       total: parseInt(countResult[0].total),
     })
   } catch (error) {

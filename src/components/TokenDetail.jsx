@@ -271,10 +271,10 @@ export default function TokenDetail({ token, onBack }) {
 
           {/* Price changes */}
           <div className="td__changes">
-            <ChangeTag label="5M" value={t.price_change_24h} />
-            <ChangeTag label="1H" value={t.price_change_24h} />
-            <ChangeTag label="6H" value={t.price_change_24h} />
-            <ChangeTag label="24H" value={t.price_change_24h} />
+            <ChangeTag label="5M" value={t.change_5m} />
+            <ChangeTag label="1H" value={t.change_1h} />
+            <ChangeTag label="6H" value={t.change_6h} />
+            <ChangeTag label="24H" value={t.change_24h} />
           </div>
 
           {/* Transaction stats */}
