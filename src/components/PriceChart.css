@@ -4,17 +4,172 @@
   min-height: 200px;
   background: var(--bg-primary);
   border: none;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.price-chart--fullscreen {
+  background: var(--bg-primary);
+  z-index: 999;
 }
 
 .price-chart__container {
   width: 100%;
 }
 
+/* Toolbar */
+.price-chart__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.price-chart__toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.price-chart__toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.price-chart__toolbar-spacer {
+  flex: 1;
+}
+
+.price-chart__tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+.price-chart__tool-btn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+}
+
+.price-chart__tool-btn--active {
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.price-chart__tool-btn--label {
+  padding: 5px 10px;
+}
+
+/* Indicator dropdown */
+.price-chart__indicator-wrap {
+  position: relative;
+}
+
+.price-chart__indicator-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 160px;
+  z-index: 100;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.price-chart__indicator-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  text-align: left;
+  transition: all 0.1s ease;
+}
+
+.price-chart__indicator-item:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.price-chart__indicator-item--active {
+  color: var(--text-primary);
+}
+
+.price-chart__indicator-item svg {
+  margin-left: auto;
+  color: var(--accent);
+}
+
+.price-chart__indicator-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Active indicator pills */
+.price-chart__active-pills {
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.price-chart__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 100px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid;
+  background: transparent;
+}
+
+.price-chart__pill-x {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  margin-left: 2px;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.price-chart__pill-x:hover {
+  opacity: 1;
+}
+
+/* Loading / Empty */
 .price-chart__loading,
 .price-chart__empty {
   position: absolute;
   inset: 0;
+  top: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -36,4 +191,18 @@
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .price-chart__toolbar {
+    padding: 4px 6px;
+    gap: 2px;
+  }
+  .price-chart__tool-btn--label span:not(.price-chart__indicator-dot) {
+    display: none;
+  }
+  .price-chart__active-pills {
+    display: none;
+  }
 }
