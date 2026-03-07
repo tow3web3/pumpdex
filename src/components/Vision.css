@@ -1,0 +1,220 @@
+.vision {
+  padding: 100px 24px;
+}
+
+.vision__inner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.vision__header {
+  text-align: center;
+  margin-bottom: 56px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.vision__header--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.vision__header .section-sub {
+  max-width: none;
+  margin: 0 auto;
+}
+
+/* Grid */
+.vision__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 64px;
+}
+
+.vision__card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.vision__card--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.vision__card--live {
+  border-color: rgba(0, 255, 136, 0.2);
+  background: linear-gradient(135deg, rgba(0, 255, 136, 0.03), var(--bg-card));
+}
+
+.vision__card:hover {
+  transform: translateY(-4px);
+  border-color: var(--border-hover);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.vision__card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.vision__phase {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.vision__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.vision__status--live {
+  background: rgba(0, 255, 136, 0.1);
+  color: var(--accent);
+}
+
+.vision__status--next {
+  background: rgba(68, 136, 255, 0.1);
+  color: var(--blue);
+}
+
+.vision__status--upcoming {
+  background: rgba(170, 102, 255, 0.1);
+  color: var(--purple);
+}
+
+.vision__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 2s infinite;
+}
+
+.vision__card-title {
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 18px;
+}
+
+.vision__list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vision__list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.vision__card--live .vision__list-item svg {
+  color: var(--accent);
+}
+
+.vision__card--next .vision__list-item svg {
+  color: var(--blue);
+}
+
+.vision__card--upcoming .vision__list-item svg {
+  color: var(--purple);
+}
+
+/* CTA */
+.vision__cta {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s;
+}
+
+.vision__cta--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.vision__cta-card {
+  text-align: center;
+  padding: 56px 32px;
+  background: linear-gradient(135deg, rgba(0, 255, 136, 0.05), rgba(68, 136, 255, 0.03));
+  border: 1px solid rgba(0, 255, 136, 0.15);
+  border-radius: 18px;
+  animation: borderGlow 4s infinite;
+}
+
+.vision__cta-title {
+  font-size: clamp(24px, 3.5vw, 32px);
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.vision__cta-sub {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin-bottom: 28px;
+}
+
+.vision__cta-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.vision__cta-btn {
+  padding: 14px 32px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 0.25s ease;
+}
+
+.vision__cta-btn--primary {
+  background: var(--accent);
+  color: #0a0a0f;
+  box-shadow: 0 0 30px rgba(0, 255, 136, 0.2);
+}
+
+.vision__cta-btn--primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 40px rgba(0, 255, 136, 0.35);
+}
+
+.vision__cta-btn--secondary {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+.vision__cta-btn--secondary:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-2px);
+}
+
+@media (max-width: 768px) {
+  .vision__grid {
+    grid-template-columns: 1fr;
+  }
+}

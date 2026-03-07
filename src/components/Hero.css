@@ -1,0 +1,298 @@
+.hero {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 120px 24px 80px;
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+}
+
+/* Video background */
+.hero__bg-video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  min-width: 100%;
+  min-height: 100%;
+  transform: translate(-50%, -50%);
+  object-fit: cover;
+  z-index: 0;
+  filter: blur(6px) brightness(0.3);
+  pointer-events: none;
+}
+
+/* Dark overlay on top of video */
+.hero__bg-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(10, 10, 15, 0.55);
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Atmospheric gradient background */
+.hero__bg-gradient {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 140%;
+  height: 100%;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 40%, rgba(0, 255, 136, 0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 80% 40% at 30% 60%, rgba(68, 136, 255, 0.03) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 30% at 70% 30%, rgba(170, 102, 255, 0.03) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hero__inner {
+  max-width: 800px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  z-index: 2;
+}
+
+/* Staggered animations */
+.hero__owl-row,
+.hero__title,
+.hero__sub,
+.hero__search-bar,
+.hero__pills,
+.hero__stats {
+  opacity: 0;
+  transform: translateY(25px);
+  transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hero--visible .hero__owl-row { opacity: 1; transform: translateY(0); transition-delay: 0s; }
+.hero--visible .hero__title { opacity: 1; transform: translateY(0); transition-delay: 0.05s; }
+.hero--visible .hero__sub { opacity: 1; transform: translateY(0); transition-delay: 0.1s; }
+.hero--visible .hero__search-bar { opacity: 1; transform: translateY(0); transition-delay: 0.2s; }
+.hero--visible .hero__pills { opacity: 1; transform: translateY(0); transition-delay: 0.3s; }
+.hero--visible .hero__stats { opacity: 1; transform: translateY(0); transition-delay: 0.4s; }
+
+/* Owl mascot */
+.hero__owl-row {
+  margin-bottom: 24px;
+}
+
+.hero__owl {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  animation: owlBump 3s ease-in-out infinite;
+  filter: drop-shadow(0 4px 20px rgba(0, 255, 136, 0.15));
+}
+
+@keyframes owlBump {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  20% { transform: translateY(-6px) rotate(-2deg); }
+  40% { transform: translateY(0) rotate(0deg); }
+  60% { transform: translateY(-4px) rotate(1.5deg); }
+  80% { transform: translateY(0) rotate(0deg); }
+}
+
+/* Title - Tripo inspired with italic emphasis */
+.hero__title {
+  font-size: clamp(40px, 6.5vw, 72px);
+  font-weight: 300;
+  line-height: 1.1;
+  letter-spacing: -1.5px;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+}
+
+.hero__title em {
+  font-style: italic;
+  font-weight: 300;
+  background: linear-gradient(135deg, #e8e8f0 0%, #8888a0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Subtitle */
+.hero__sub {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-width: 480px;
+  margin-bottom: 44px;
+  font-weight: 400;
+}
+
+/* Search bar - the centerpiece like Tripo */
+.hero__search-bar {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 6px 6px 6px 20px;
+  gap: 12px;
+  margin-bottom: 28px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 40px rgba(0, 0, 0, 0.3);
+}
+
+.hero__search-bar:focus-within {
+  border-color: rgba(0, 255, 136, 0.3);
+  box-shadow: 0 4px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 255, 136, 0.1);
+}
+
+.hero__search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.hero__search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.hero__search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.hero__search-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #0a0a0f;
+  font-size: 14px;
+  font-weight: 700;
+  border: none;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.hero__search-btn:hover {
+  background: var(--accent-dim);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0, 255, 136, 0.3);
+}
+
+/* Pills */
+.hero__pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 48px;
+}
+
+.hero__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border);
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.hero__pill:hover {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hero__pill--highlight {
+  border-color: rgba(0, 255, 136, 0.2);
+  color: var(--accent);
+}
+
+.hero__pill--highlight:hover {
+  background: var(--accent-glow);
+  border-color: rgba(0, 255, 136, 0.3);
+}
+
+/* Stats */
+.hero__stats {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+}
+
+.hero__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.hero__stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.hero__stat-value--accent {
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.hero__stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.hero__stat-divider {
+  width: 1px;
+  height: 32px;
+  background: var(--border);
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding: 100px 16px 60px;
+  }
+  .hero__search-bar {
+    flex-direction: column;
+    padding: 12px;
+    gap: 8px;
+  }
+  .hero__search-icon {
+    display: none;
+  }
+  .hero__search-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .hero__pills {
+    gap: 6px;
+  }
+  .hero__stats {
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}

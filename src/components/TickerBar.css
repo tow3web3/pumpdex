@@ -1,0 +1,98 @@
+.ticker {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.ticker__back {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-muted);
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.ticker__back:hover {
+  background: var(--bg-card);
+  color: var(--accent);
+}
+
+.ticker__track {
+  display: flex;
+  gap: 24px;
+  white-space: nowrap;
+  animation: tickerScroll 40s linear infinite;
+  padding-left: 100%;
+}
+
+.ticker__track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes tickerScroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.ticker__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+.ticker__rank {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.ticker__img {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.ticker__name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ticker__change {
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+.ticker__change--up {
+  color: var(--accent);
+}
+
+.ticker__change--down {
+  color: var(--red);
+}
+
+.ticker__loading {
+  color: var(--text-muted);
+  font-size: 12px;
+  animation: pulse 2s infinite;
+}

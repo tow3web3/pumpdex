@@ -1,0 +1,28 @@
+.app-page {
+  min-height: 100vh;
+}
+
+.app-page__layout {
+  display: flex;
+  min-height: calc(100vh - 36px);
+}
+
+.app-page__main {
+  flex: 1;
+  margin-left: 220px;
+  transition: margin-left 0.25s ease;
+  min-width: 0;
+}
+
+.app-page__main--expanded {
+  margin-left: 60px;
+}
+
+@media (max-width: 900px) {
+  .app-page__main {
+    margin-left: 0;
+  }
+  .app-page__main--expanded {
+    margin-left: 0;
+  }
+}

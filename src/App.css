@@ -1,0 +1,10 @@
+.app {
+  min-height: 100vh;
+  background: var(--bg-primary);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.app--loaded {
+  opacity: 1;
+}
