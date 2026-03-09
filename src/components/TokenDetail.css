@@ -184,6 +184,17 @@
   border-bottom-color: var(--accent);
 }
 
+.td__ws-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 6px;
+  vertical-align: middle;
+  animation: td-pulse 2s ease-in-out infinite;
+}
+
 .td__bottom-content {
   flex: 1;
   overflow-y: auto;
@@ -249,6 +260,28 @@
 
 .td__txn-item:hover {
   background: var(--bg-secondary);
+}
+
+.td__txn-item--new {
+  animation: td-txn-flash 2s ease-out;
+}
+
+.td__txn-item--new.td__txn-item--buy {
+  animation: td-txn-flash-buy 2s ease-out;
+}
+
+.td__txn-item--new.td__txn-item--sell {
+  animation: td-txn-flash-sell 2s ease-out;
+}
+
+@keyframes td-txn-flash-buy {
+  0% { background: rgba(0, 255, 136, 0.2); }
+  100% { background: transparent; }
+}
+
+@keyframes td-txn-flash-sell {
+  0% { background: rgba(255, 68, 102, 0.2); }
+  100% { background: transparent; }
 }
 
 .td__txn-type {
@@ -483,12 +516,35 @@
   gap: 4px;
 }
 
+.td__price-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .td__price {
   font-size: 26px;
   font-weight: 800;
   font-family: 'JetBrains Mono', monospace;
   color: var(--text-primary);
 }
+
+.td__live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  animation: td-pulse 2s ease-in-out infinite;
+}
+
+@keyframes td-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.td__buys { color: var(--accent); }
+.td__sells { color: var(--red); }
 
 .td__price-sol {
   font-size: 12px;

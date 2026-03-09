@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui'
 import bs58 from 'bs58'
 import './TokenDetail.css'
 
 const API_BASE = '/api'
+const DEXSCREENER_API = 'https://api.dexscreener.com/tokens/v1/solana'
+const SOL_WS = 'wss://api.mainnet-beta.solana.com'
 
 function formatPrice(price) {
   const n = parseFloat(price)
@@ -96,16 +98,22 @@ export default function TokenDetail({ token, onBack }) {
   const [copied, setCopied] = useState(false)
   const [activeTab, setActiveTab] = useState('txns')
   const [freshToken, setFreshToken] = useState(token)
+  const [liveStats, setLiveStats] = useState(null)
   const [transactions, setTransactions] = useState([])
   const [txnLoading, setTxnLoading] = useState(false)
+  const [wsConnected, setWsConnected] = useState(false)
+  const [newTxnIds, setNewTxnIds] = useState(new Set())
   const [showUpdateModal, setShowUpdateModal] = useState(false)
   const [holders, setHolders] = useState([])
   const [holdersLoading, setHoldersLoading] = useState(false)
   const [updateForm, setUpdateForm] = useState({ description: '', twitter: '', telegram: '', website: '' })
   const [updateSaving, setUpdateSaving] = useState(false)
   const [updateMsg, setUpdateMsg] = useState(null)
+  const wsRef = useRef(null)
+  const txnRefreshRef = useRef(null)
+  const knownSigsRef = useRef(new Set())
 
-  // Fetch fresh token data
+  // Fetch fresh token data from our API (once, for description/socials/etc)
   useEffect(() => {
     if (!token) return
     async function fetchToken() {
@@ -120,29 +128,167 @@ export default function TokenDetail({ token, onBack }) {
     fetchToken()
   }, [token])
 
-
-  // Fetch transactions
+  // Fetch live stats from DexScreener every 10s
   useEffect(() => {
     if (!token) return
     let cancelled = false
-    async function fetchTxns() {
-      setTxnLoading(true)
+
+    async function fetchDexScreener() {
       try {
-        const res = await fetch(`${API_BASE}/token/${token.mint}/transactions`)
-        if (!res.ok) throw new Error('Failed')
-        const data = await res.json()
-        if (!cancelled) setTransactions(data.transactions || [])
-      } catch {
-        if (!cancelled) setTransactions([])
-      } finally {
-        if (!cancelled) setTxnLoading(false)
-      }
+        const res = await fetch(`${DEXSCREENER_API}/${token.mint}`)
+        if (!res.ok) return
+        const pairs = await res.json()
+        if (cancelled || !pairs?.length) return
+        // Pick the pair with highest liquidity
+        const best = pairs.reduce((a, b) =>
+          (b.liquidity?.usd || 0) > (a.liquidity?.usd || 0) ? b : a
+        , pairs[0])
+        setLiveStats({
+          price: parseFloat(best.priceUsd) || 0,
+          priceNative: parseFloat(best.priceNative) || 0,
+          marketCap: best.marketCap || 0,
+          fdv: best.fdv || 0,
+          liquidity: best.liquidity?.usd || 0,
+          volume_5m: best.volume?.m5 || 0,
+          volume_1h: best.volume?.h1 || 0,
+          volume_6h: best.volume?.h6 || 0,
+          volume_24h: best.volume?.h24 || 0,
+          txns_5m: (best.txns?.m5?.buys || 0) + (best.txns?.m5?.sells || 0),
+          txns_1h: (best.txns?.h1?.buys || 0) + (best.txns?.h1?.sells || 0),
+          txns_6h: (best.txns?.h6?.buys || 0) + (best.txns?.h6?.sells || 0),
+          txns_24h: (best.txns?.h24?.buys || 0) + (best.txns?.h24?.sells || 0),
+          buys_24h: best.txns?.h24?.buys || 0,
+          sells_24h: best.txns?.h24?.sells || 0,
+          change_5m: best.priceChange?.m5 || 0,
+          change_1h: best.priceChange?.h1 || 0,
+          change_6h: best.priceChange?.h6 || 0,
+          change_24h: best.priceChange?.h24 || 0,
+          dex: best.dexId || '',
+          pairAddress: best.pairAddress || '',
+        })
+      } catch {}
     }
-    fetchTxns()
-    // Auto-refresh every 30s
-    const interval = setInterval(fetchTxns, 30000)
+
+    fetchDexScreener()
+    const interval = setInterval(fetchDexScreener, 10000)
     return () => { cancelled = true; clearInterval(interval) }
   }, [token])
+
+  // Fetch transactions from Helius API
+  const fetchTxns = useCallback(async () => {
+    if (!token) return
+    setTxnLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/token/${token.mint}/transactions`)
+      if (!res.ok) throw new Error('Failed')
+      const data = await res.json()
+      const txns = data.transactions || []
+
+      // Detect new transactions for flash animation
+      const prevSigs = knownSigsRef.current
+      if (prevSigs.size > 0) {
+        const fresh = new Set()
+        for (const tx of txns) {
+          if (!prevSigs.has(tx.signature)) fresh.add(tx.signature)
+        }
+        if (fresh.size > 0) {
+          setNewTxnIds(fresh)
+          setTimeout(() => setNewTxnIds(new Set()), 2000)
+        }
+      }
+      knownSigsRef.current = new Set(txns.map(tx => tx.signature))
+      setTransactions(txns)
+    } catch {
+      setTransactions(prev => prev) // keep existing
+    } finally {
+      setTxnLoading(false)
+    }
+  }, [token])
+
+  // Initial txn fetch + polling fallback
+  useEffect(() => {
+    if (!token) return
+    fetchTxns()
+    const interval = setInterval(fetchTxns, 15000)
+    return () => clearInterval(interval)
+  }, [token, fetchTxns])
+
+  // WebSocket for real-time transaction detection
+  useEffect(() => {
+    if (!token) return
+    let ws = null
+    let subId = null
+    let reconnectTimer = null
+
+    function connect() {
+      try {
+        ws = new WebSocket(SOL_WS)
+        wsRef.current = ws
+
+        ws.onopen = () => {
+          setWsConnected(true)
+          ws.send(JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'logsSubscribe',
+            params: [
+              { mentions: [token.mint] },
+              { commitment: 'confirmed' }
+            ]
+          }))
+        }
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data)
+            // Subscription confirmation
+            if (msg.result !== undefined && !msg.method) {
+              subId = msg.result
+              return
+            }
+            // New log notification — a transaction involving our token
+            if (msg.method === 'logsNotification') {
+              // Debounce: don't refetch more than once per 3s
+              if (!txnRefreshRef.current) {
+                txnRefreshRef.current = setTimeout(() => {
+                  fetchTxns()
+                  txnRefreshRef.current = null
+                }, 3000)
+              }
+            }
+          } catch {}
+        }
+
+        ws.onclose = () => {
+          setWsConnected(false)
+          wsRef.current = null
+          // Reconnect after 5s
+          reconnectTimer = setTimeout(connect, 5000)
+        }
+
+        ws.onerror = () => {
+          ws.close()
+        }
+      } catch {
+        setWsConnected(false)
+        reconnectTimer = setTimeout(connect, 5000)
+      }
+    }
+
+    connect()
+
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (txnRefreshRef.current) clearTimeout(txnRefreshRef.current)
+      if (ws && ws.readyState <= 1) {
+        if (subId !== null) {
+          try { ws.send(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'logsUnsubscribe', params: [subId] })) } catch {}
+        }
+        ws.close()
+      }
+      wsRef.current = null
+    }
+  }, [token, fetchTxns])
 
   // Fetch holders when tab is activated
   useEffect(() => {
@@ -219,8 +365,18 @@ export default function TokenDetail({ token, onBack }) {
   if (!token) return null
 
   const t = freshToken || token
-  const solPrice = 150
-  const priceInSol = t.price ? (parseFloat(t.price) / solPrice) : 0
+  // Merge live DexScreener stats over token data
+  const price = liveStats?.price || parseFloat(t.price) || 0
+  const priceInSol = liveStats?.priceNative || 0
+  const marketCap = liveStats?.marketCap || parseFloat(t.market_cap) || 0
+  const fdv = liveStats?.fdv || parseFloat(t.market_cap) || 0
+  const liquidity = liveStats?.liquidity || parseFloat(t.liquidity) || 0
+  const volume24h = liveStats?.volume_24h || parseFloat(t.volume_24h) || 0
+  const txns24h = liveStats?.txns_24h || 0
+  const change5m = liveStats?.change_5m ?? parseFloat(t.change_5m) ?? 0
+  const change1h = liveStats?.change_1h ?? parseFloat(t.change_1h) ?? 0
+  const change6h = liveStats?.change_6h ?? parseFloat(t.change_6h) ?? 0
+  const change24h = liveStats?.change_24h ?? parseFloat(t.change_24h) ?? 0
 
   const handleCopy = () => {
     navigator.clipboard.writeText(t.mint)
@@ -283,6 +439,7 @@ export default function TokenDetail({ token, onBack }) {
           <div className="td__bottom-tabs">
             <button className={`td__btab ${activeTab === 'txns' ? 'td__btab--active' : ''}`} onClick={() => setActiveTab('txns')}>
               Transactions
+              {wsConnected && <span className="td__ws-dot" title="Live WebSocket connected" />}
             </button>
             <button className={`td__btab ${activeTab === 'holders' ? 'td__btab--active' : ''}`} onClick={() => setActiveTab('holders')}>
               Holders
@@ -317,7 +474,7 @@ export default function TokenDetail({ token, onBack }) {
                     {transactions.map(tx => (
                       <a
                         key={tx.signature}
-                        className={`td__txn-item ${tx.type === 'buy' ? 'td__txn-item--buy' : 'td__txn-item--sell'}`}
+                        className={`td__txn-item ${tx.type === 'buy' ? 'td__txn-item--buy' : 'td__txn-item--sell'}${newTxnIds.has(tx.signature) ? ' td__txn-item--new' : ''}`}
                         href={`https://solscan.io/tx/${tx.signature}`}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -437,10 +594,13 @@ export default function TokenDetail({ token, onBack }) {
 
           {/* Price */}
           <div className="td__price-section">
-            <span className="td__price">{formatPrice(t.price)}</span>
+            <div className="td__price-row">
+              <span className="td__price">{formatPrice(price)}</span>
+              {liveStats && <span className="td__live-dot" title="Live data from DexScreener" />}
+            </div>
             <span className="td__price-sol">{priceInSol > 0 ? `${priceInSol.toFixed(8)} SOL` : '-'}</span>
-            <span className={`td__price-change ${parseFloat(t.change_24h) >= 0 ? 'td__price-change--up' : 'td__price-change--down'}`}>
-              {parseFloat(t.change_24h) >= 0 ? '+' : ''}{(parseFloat(t.change_24h) || 0).toFixed(2)}%
+            <span className={`td__price-change ${change24h >= 0 ? 'td__price-change--up' : 'td__price-change--down'}`}>
+              {change24h >= 0 ? '+' : ''}{change24h.toFixed(2)}%
             </span>
           </div>
 
@@ -448,36 +608,46 @@ export default function TokenDetail({ token, onBack }) {
           <div className="td__stats-grid">
             <div className="td__stat-box">
               <span className="td__stat-label">LIQUIDITY</span>
-              <span className="td__stat-value">{formatMc(t.liquidity)}</span>
+              <span className="td__stat-value">{formatMc(liquidity)}</span>
             </div>
             <div className="td__stat-box">
               <span className="td__stat-label">FDV</span>
-              <span className="td__stat-value">{formatMc(t.market_cap)}</span>
+              <span className="td__stat-value">{formatMc(fdv)}</span>
             </div>
             <div className="td__stat-box">
               <span className="td__stat-label">MKT CAP</span>
-              <span className="td__stat-value">{formatMc(t.market_cap)}</span>
+              <span className="td__stat-value">{formatMc(marketCap)}</span>
             </div>
           </div>
 
           {/* Price changes */}
           <div className="td__changes">
-            <ChangeTag label="5M" value={t.change_5m} />
-            <ChangeTag label="1H" value={t.change_1h} />
-            <ChangeTag label="6H" value={t.change_6h} />
-            <ChangeTag label="24H" value={t.change_24h} />
+            <ChangeTag label="5M" value={change5m} />
+            <ChangeTag label="1H" value={change1h} />
+            <ChangeTag label="6H" value={change6h} />
+            <ChangeTag label="24H" value={change24h} />
           </div>
 
           {/* Transaction stats */}
           <div className="td__txn-stats">
             <div className="td__txn-row">
-              <span className="td__txn-label">TXNS</span>
-              <span className="td__txn-value">{formatNum(t.txns_24h || 0)}</span>
+              <span className="td__txn-label">TXNS (24H)</span>
+              <span className="td__txn-value">{formatNum(txns24h)}</span>
             </div>
             <div className="td__txn-row">
-              <span className="td__txn-label">VOLUME</span>
-              <span className="td__txn-value">{formatMc(t.volume_24h)}</span>
+              <span className="td__txn-label">VOLUME (24H)</span>
+              <span className="td__txn-value">{formatMc(volume24h)}</span>
             </div>
+            {liveStats && (
+              <div className="td__txn-row">
+                <span className="td__txn-label">BUYS / SELLS</span>
+                <span className="td__txn-value">
+                  <span className="td__buys">{formatNum(liveStats.buys_24h)}</span>
+                  {' / '}
+                  <span className="td__sells">{formatNum(liveStats.sells_24h)}</span>
+                </span>
+              </div>
+            )}
             <div className="td__txn-row">
               <span className="td__txn-label">HOLDERS</span>
               <span className="td__txn-value">{formatNum(t.holder_count)}</span>
