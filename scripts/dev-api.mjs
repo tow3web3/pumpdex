@@ -637,6 +637,60 @@ app.get('/api/tokens/live', async (req, res) => {
   }
 })
 
+// GET /api/token/:mint/holders
+app.get('/api/token/:mint/holders', async (req, res) => {
+  const mint = req.params.mint
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200)
+
+  try {
+    // Fetch token accounts from Helius
+    const result = await heliusRpc('getTokenAccounts', {
+      mint,
+      limit,
+      options: { showZeroBalance: false }
+    })
+
+    if (!result?.token_accounts?.length) {
+      return res.json({ mint, holders: [], total: 0 })
+    }
+
+    // Get total supply for percentage calculation
+    let totalSupply = 0
+    try {
+      const pfRes = await fetch(`https://frontend-api-v3.pump.fun/coins/${mint}`)
+      if (pfRes.ok) {
+        const pf = await pfRes.json()
+        totalSupply = (pf.total_supply || 0) / 1e6
+      }
+    } catch {}
+
+    if (!totalSupply) {
+      const asset = await heliusRpc('getAsset', { id: mint })
+      if (asset) {
+        const decimals = asset.token_info?.decimals || 6
+        totalSupply = (asset.token_info?.supply || 0) / Math.pow(10, decimals)
+      }
+    }
+
+    const holders = result.token_accounts
+      .map(acc => {
+        const amount = parseFloat(acc.amount) / 1e6
+        return {
+          address: acc.owner,
+          amount,
+          pct: totalSupply > 0 ? (amount / totalSupply) * 100 : 0,
+        }
+      })
+      .filter(h => h.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
+
+    res.json({ mint, holders, total: holders.length })
+  } catch (e) {
+    console.error('Holders error:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // GET /api/token/:mint/transactions
 app.get('/api/token/:mint/transactions', async (req, res) => {
   const keys = [process.env.HELIUS_KEY, process.env.HELIUS_KEY_FALLBACK].filter(Boolean)

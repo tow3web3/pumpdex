@@ -99,6 +99,8 @@ export default function TokenDetail({ token, onBack }) {
   const [transactions, setTransactions] = useState([])
   const [txnLoading, setTxnLoading] = useState(false)
   const [showUpdateModal, setShowUpdateModal] = useState(false)
+  const [holders, setHolders] = useState([])
+  const [holdersLoading, setHoldersLoading] = useState(false)
   const [updateForm, setUpdateForm] = useState({ description: '', twitter: '', telegram: '', website: '' })
   const [updateSaving, setUpdateSaving] = useState(false)
   const [updateMsg, setUpdateMsg] = useState(null)
@@ -141,6 +143,28 @@ export default function TokenDetail({ token, onBack }) {
     const interval = setInterval(fetchTxns, 30000)
     return () => { cancelled = true; clearInterval(interval) }
   }, [token])
+
+  // Fetch holders when tab is activated
+  useEffect(() => {
+    if (activeTab !== 'holders' || !token) return
+    if (holders.length > 0) return // already fetched
+    let cancelled = false
+    async function fetchHolders() {
+      setHoldersLoading(true)
+      try {
+        const res = await fetch(`${API_BASE}/token/${token.mint}/holders?limit=100`)
+        if (!res.ok) throw new Error('Failed')
+        const data = await res.json()
+        if (!cancelled) setHolders(data.holders || [])
+      } catch {
+        if (!cancelled) setHolders([])
+      } finally {
+        if (!cancelled) setHoldersLoading(false)
+      }
+    }
+    fetchHolders()
+    return () => { cancelled = true }
+  }, [activeTab, token])
 
   const openUpdateModal = () => {
     const t = freshToken || token
@@ -312,9 +336,44 @@ export default function TokenDetail({ token, onBack }) {
               </div>
             )}
             {activeTab === 'holders' && (
-              <div className="td__txn-placeholder">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                <span>{formatNum(t.holder_count)} holders</span>
+              <div className="td__holders-list">
+                {holdersLoading && holders.length === 0 ? (
+                  <div className="td__txn-placeholder">
+                    <div className="td__txn-spinner" />
+                    <span>Loading holders...</span>
+                  </div>
+                ) : holders.length === 0 ? (
+                  <div className="td__txn-placeholder">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span>No holder data available</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="td__holders-head">
+                      <span>#</span>
+                      <span>Wallet</span>
+                      <span>Amount</span>
+                      <span>%</span>
+                    </div>
+                    {holders.map((h, i) => (
+                      <a
+                        key={h.address}
+                        className="td__holder-row"
+                        href={`https://solscan.io/account/${h.address}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <span className="td__holder-rank">{i + 1}</span>
+                        <span className="td__holder-addr">{shortenAddr(h.address)}</span>
+                        <span className="td__holder-amt">{formatTokenAmt(h.amount)}</span>
+                        <span className="td__holder-pct">
+                          <span className="td__holder-bar" style={{ width: `${Math.min(h.pct, 100)}%` }} />
+                          {h.pct.toFixed(2)}%
+                        </span>
+                      </a>
+                    ))}
+                  </>
+                )}
               </div>
             )}
             {activeTab === 'info' && (
