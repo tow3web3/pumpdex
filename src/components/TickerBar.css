@@ -35,7 +35,6 @@
   gap: 24px;
   white-space: nowrap;
   animation: tickerScroll 40s linear infinite;
-  padding-left: 100%;
 }
 
 .ticker__track:hover {
@@ -43,10 +42,10 @@
 }
 
 @keyframes tickerScroll {
-  0% {
+  from {
     transform: translateX(0);
   }
-  100% {
+  to {
     transform: translateX(-50%);
   }
 }

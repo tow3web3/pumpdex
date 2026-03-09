@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import { neon } from '@neondatabase/serverless'
@@ -268,6 +269,223 @@ app.get('/api/token/:mint', async (req, res) => {
   }
 })
 
+// Verify Solana wallet signature
+async function verifySignature(walletAddress, message, signature) {
+  try {
+    const { default: nacl } = await import('tweetnacl')
+    const bs58Module = await import('bs58')
+    const bs58 = bs58Module.default || bs58Module
+    const pubKeyBytes = bs58.decode(walletAddress)
+    const msgBytes = new TextEncoder().encode(message)
+    const sigBytes = bs58.decode(signature)
+    return nacl.sign.detached.verify(msgBytes, sigBytes, pubKeyBytes)
+  } catch (e) {
+    console.error('Signature verification error:', e.message)
+    return false
+  }
+}
+
+// Get token creator from PumpFun API
+async function getTokenCreator(mint) {
+  try {
+    const pfRes = await fetch(`https://frontend-api-v3.pump.fun/coins/${mint}`)
+    if (pfRes.ok) {
+      const pf = await pfRes.json()
+      if (pf && pf.creator) return pf.creator
+    }
+  } catch {}
+  return null
+}
+
+// POST /api/token/:mint/update — update token info (requires creator wallet signature)
+app.post('/api/token/:mint/update', async (req, res) => {
+  try {
+    const mint = req.params.mint
+    const { description, twitter, telegram, website, walletAddress, signature } = req.body || {}
+
+    // Require wallet signature
+    if (!walletAddress || !signature) {
+      return res.status(401).json({ error: 'Wallet signature required. Please connect the token creator wallet.' })
+    }
+
+    // Verify signature
+    const message = `Update token info for ${mint} on PumpDex`
+    const valid = await verifySignature(walletAddress, message, signature)
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid signature. Please try again.' })
+    }
+
+    // Verify wallet is the token creator
+    const creator = await getTokenCreator(mint)
+    if (!creator) {
+      return res.status(404).json({ error: 'Could not verify token creator. Is this a PumpFun token?' })
+    }
+    if (creator !== walletAddress) {
+      return res.status(403).json({ error: 'Only the token creator can update token info. Connected wallet does not match.' })
+    }
+
+    // Sanitize inputs
+    const clean = {
+      description: (description || '').slice(0, 500).trim() || null,
+      twitter: (twitter || '').replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 50) || null,
+      telegram: (telegram || '').replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 50) || null,
+      website: (website || '').slice(0, 200).trim() || null,
+    }
+
+    // Validate website URL if provided
+    if (clean.website && !/^https?:\/\/.+/.test(clean.website)) {
+      clean.website = 'https://' + clean.website
+    }
+
+    // Check if token exists in DB
+    const existing = await sql`SELECT mint FROM tokens WHERE mint = ${mint}`
+
+    if (existing.length > 0) {
+      // Update existing token
+      await sql`UPDATE tokens SET
+        description = ${clean.description},
+        twitter = ${clean.twitter},
+        telegram = ${clean.telegram},
+        website = ${clean.website},
+        updated_at = NOW()
+        WHERE mint = ${mint}`
+    } else {
+      // Token not in DB yet — fetch from chain and insert with updated info
+      const onChain = await fetchTokenOnChain(mint)
+      if (!onChain) {
+        return res.status(404).json({ error: 'Token not found on chain' })
+      }
+      await sql`INSERT INTO tokens (mint, name, symbol, description, image_uri, metadata_uri, twitter, telegram, website, market_cap, price, supply, volume_24h, liquidity, holder_count, is_migrated, created_at, updated_at, synced_at)
+        VALUES (${mint}, ${onChain.name}, ${onChain.symbol}, ${clean.description || onChain.description}, ${onChain.image_uri}, ${onChain.metadata_uri}, ${clean.twitter || onChain.twitter}, ${clean.telegram || onChain.telegram}, ${clean.website || onChain.website}, ${onChain.market_cap}, ${onChain.price}, ${onChain.supply}, ${onChain.volume_24h || 0}, ${onChain.liquidity || 0}, ${onChain.holder_count || 0}, ${onChain.is_migrated}, ${onChain.created_at || new Date().toISOString()}, NOW(), NOW())
+        ON CONFLICT (mint) DO UPDATE SET
+          description = EXCLUDED.description, twitter = EXCLUDED.twitter,
+          telegram = EXCLUDED.telegram, website = EXCLUDED.website, updated_at = NOW()`
+    }
+
+    res.json({
+      description: clean.description,
+      twitter: clean.twitter,
+      telegram: clean.telegram,
+      website: clean.website,
+    })
+  } catch (e) {
+    console.error('Token update error:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// Build candles from Helius parsed transaction history
+async function fetchCandlesFromTrades(mint, range) {
+  const keys = [process.env.HELIUS_KEY, process.env.HELIUS_KEY_FALLBACK].filter(Boolean)
+  if (!keys.length) return null
+
+  const rangeMs = { '1h': 3600000, '6h': 21600000, '24h': 86400000, '7d': 604800000 }
+  const candleMs = { '1h': 60000, '6h': 300000, '24h': 900000, '7d': 3600000 }
+  const maxAge = rangeMs[range] || 86400000
+  const bucketSize = candleMs[range] || 900000
+  const cutoff = Date.now() - maxAge
+
+  try {
+    // Fetch swap transactions from Helius
+    let rawTxns = null
+    for (const key of keys) {
+      try {
+        const url = `https://api.helius.xyz/v0/addresses/${mint}/transactions?api-key=${key}&limit=100&type=SWAP`
+        const response = await fetch(url)
+        if (response.ok) {
+          rawTxns = await response.json()
+          break
+        }
+      } catch {}
+    }
+    if (!rawTxns || rawTxns.length === 0) return null
+
+    // Also get PumpFun coin info for current price as anchor
+    let currentPrice = null
+    try {
+      const pfRes = await fetch(`https://frontend-api-v3.pump.fun/coins/${mint}`)
+      if (pfRes.ok) {
+        const pf = await pfRes.json()
+        if (pf && pf.virtual_sol_reserves && pf.virtual_token_reserves) {
+          const virtualSol = pf.virtual_sol_reserves / 1e9
+          const virtualTokens = pf.virtual_token_reserves / 1e6
+          const totalSupply = (pf.total_supply || 1e15) / 1e6
+          const usdMcap = pf.usd_market_cap || 0
+          currentPrice = usdMcap > 0 ? usdMcap / totalSupply : 0
+        }
+      }
+    } catch {}
+
+    // Extract trade prices from transactions
+    const trades = []
+    for (const tx of rawTxns) {
+      const ts = (tx.timestamp || 0) * 1000
+      if (ts < cutoff) continue
+
+      const tokenTransfers = tx.tokenTransfers || []
+      const nativeTransfers = tx.nativeTransfers || []
+
+      const tokenTx = tokenTransfers.find(t => t.mint === mint)
+      const tokenAmount = tokenTx ? Math.abs(tokenTx.tokenAmount) : 0
+      const solAmount = Math.abs(nativeTransfers.reduce((sum, t) => sum + (t.amount || 0), 0)) / 1e9
+
+      if (tokenAmount > 0 && solAmount > 0) {
+        // Price per token in SOL, convert to rough USD (estimate SOL at ~$150)
+        const pricePerToken = solAmount / tokenAmount
+        // Use currentPrice to calibrate USD value if available
+        trades.push({ ts: Math.floor(ts / 1000), price: pricePerToken, volume: solAmount })
+      }
+    }
+
+    if (trades.length < 2) return null
+
+    // If we have a current USD price, scale all SOL-denominated prices to USD
+    // by using the ratio of latest trade price to current USD price
+    const latestTrade = trades.sort((a, b) => b.ts - a.ts)[0]
+    const solToUsd = currentPrice && latestTrade.price > 0
+      ? currentPrice / latestTrade.price
+      : 150 // fallback SOL price estimate
+
+    // Build OHLC candles
+    const bucketSizeSec = bucketSize / 1000
+    const buckets = {}
+    for (const t of trades) {
+      const bucketTime = Math.floor(t.ts / bucketSizeSec) * bucketSizeSec
+      const price = t.price * solToUsd
+      const vol = t.volume * (currentPrice ? solToUsd : 150)
+      if (!buckets[bucketTime]) {
+        buckets[bucketTime] = { time: bucketTime, open: price, high: price, low: price, close: price, volume: vol }
+      } else {
+        const b = buckets[bucketTime]
+        if (price > b.high) b.high = price
+        if (price < b.low) b.low = price
+        b.close = price
+        b.volume += vol
+      }
+    }
+
+    const candles = Object.values(buckets).sort((a, b) => a.time - b.time)
+    if (candles.length === 0) return null
+
+    // Interpolate flat candles
+    for (let i = 0; i < candles.length; i++) {
+      const c = candles[i]
+      if (c.open === c.high && c.high === c.low && c.low === c.close) {
+        if (i > 0) c.open = candles[i - 1].close
+        const spread = Math.abs(c.close - c.open)
+        const wick = spread > 0 ? spread * 0.3 : c.close * 0.001
+        c.high = Math.max(c.open, c.close) + wick
+        c.low = Math.min(c.open, c.close) - wick
+      }
+    }
+
+    return candles
+  } catch (e) {
+    console.error('fetchCandlesFromTrades error:', e.message)
+    return null
+  }
+}
+
 // GET /api/token/:mint/history
 app.get('/api/token/:mint/history', async (req, res) => {
   const { range = '24h' } = req.query
@@ -279,53 +497,78 @@ app.get('/api/token/:mint/history', async (req, res) => {
       `SELECT price, market_cap, volume, timestamp FROM price_history WHERE mint = $1 AND timestamp > NOW() - INTERVAL '${interval}' ORDER BY timestamp ASC`,
       [req.params.mint]
     )
-    let priceChange = 0
+
+    let candles = []
+
     if (data.length >= 2) {
+      // Build candles from DB data
+      let priceChange = 0
       const first = parseFloat(data[0].price)
       const last = parseFloat(data[data.length - 1].price)
       if (first > 0) priceChange = ((last - first) / first) * 100
-    }
-    // Aggregate into OHLC candles
-    const candleMinutes = { '1h': 1, '6h': 5, '24h': 15, '7d': 60 }
-    const bucketSize = (candleMinutes[range] || 15) * 60 // seconds
-    const buckets = {}
-    for (const r of data) {
-      const ts = Math.floor(new Date(r.timestamp).getTime() / 1000)
-      const bucketTime = Math.floor(ts / bucketSize) * bucketSize
-      const price = parseFloat(r.price)
-      const vol = parseFloat(r.volume) || 0
-      if (!buckets[bucketTime]) {
-        buckets[bucketTime] = { time: bucketTime, open: price, high: price, low: price, close: price, volume: vol }
-      } else {
-        const b = buckets[bucketTime]
-        if (price > b.high) b.high = price
-        if (price < b.low) b.low = price
-        b.close = price
-        b.volume += vol
-      }
-    }
-    const candles = Object.values(buckets).sort((a, b) => a.time - b.time)
 
-    // When candles are flat (single data point per bucket), use previous
-    // candle's close as open and add wicks so candlesticks render visually
-    for (let i = 0; i < candles.length; i++) {
-      const c = candles[i]
-      if (c.open === c.high && c.high === c.low && c.low === c.close) {
-        if (i > 0) {
-          c.open = candles[i - 1].close
+      const candleMinutes = { '1h': 1, '6h': 5, '24h': 15, '7d': 60 }
+      const bucketSize = (candleMinutes[range] || 15) * 60
+      const buckets = {}
+      for (const r of data) {
+        const ts = Math.floor(new Date(r.timestamp).getTime() / 1000)
+        const bucketTime = Math.floor(ts / bucketSize) * bucketSize
+        const price = parseFloat(r.price)
+        const vol = parseFloat(r.volume) || 0
+        if (!buckets[bucketTime]) {
+          buckets[bucketTime] = { time: bucketTime, open: price, high: price, low: price, close: price, volume: vol }
+        } else {
+          const b = buckets[bucketTime]
+          if (price > b.high) b.high = price
+          if (price < b.low) b.low = price
+          b.close = price
+          b.volume += vol
         }
-        const spread = Math.abs(c.close - c.open)
-        const wick = spread > 0 ? spread * 0.3 : c.close * 0.001
-        c.high = Math.max(c.open, c.close) + wick
-        c.low = Math.min(c.open, c.close) - wick
       }
+      candles = Object.values(buckets).sort((a, b) => a.time - b.time)
+
+      // Interpolate flat candles
+      for (let i = 0; i < candles.length; i++) {
+        const c = candles[i]
+        if (c.open === c.high && c.high === c.low && c.low === c.close) {
+          if (i > 0) c.open = candles[i - 1].close
+          const spread = Math.abs(c.close - c.open)
+          const wick = spread > 0 ? spread * 0.3 : c.close * 0.001
+          c.high = Math.max(c.open, c.close) + wick
+          c.low = Math.min(c.open, c.close) - wick
+        }
+      }
+
+      return res.json({
+        mint: req.params.mint, range,
+        priceChange: Math.round(priceChange * 100) / 100,
+        dataPoints: candles.length,
+        history: candles,
+      })
     }
 
+    // No DB data — build candles from Helius trade history
+    const pfCandles = await fetchCandlesFromTrades(req.params.mint, range)
+    if (pfCandles && pfCandles.length > 0) {
+      let priceChange = 0
+      const first = pfCandles[0].open
+      const last = pfCandles[pfCandles.length - 1].close
+      if (first > 0) priceChange = ((last - first) / first) * 100
+
+      return res.json({
+        mint: req.params.mint, range,
+        priceChange: Math.round(priceChange * 100) / 100,
+        dataPoints: pfCandles.length,
+        history: pfCandles,
+      })
+    }
+
+    // No data at all
     res.json({
       mint: req.params.mint, range,
-      priceChange: Math.round(priceChange * 100) / 100,
-      dataPoints: candles.length,
-      history: candles,
+      priceChange: 0,
+      dataPoints: 0,
+      history: [],
     })
   } catch (e) {
     res.status(500).json({ error: e.message })

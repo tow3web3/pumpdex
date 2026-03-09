@@ -120,8 +120,13 @@ export default function Dashboard({ onSelectToken }) {
   }, [search, sort, order, filter, liveMode, tab])
 
   useEffect(() => {
-    const debounce = setTimeout(fetchTokens, 300)
-    return () => clearTimeout(debounce)
+    // Fetch immediately on first render, debounce subsequent changes
+    if (!tokens.length && loading) {
+      fetchTokens()
+    } else {
+      const debounce = setTimeout(fetchTokens, 300)
+      return () => clearTimeout(debounce)
+    }
   }, [fetchTokens])
 
   useEffect(() => {

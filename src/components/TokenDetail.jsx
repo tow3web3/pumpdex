@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import PriceChart from './PriceChart'
+import { useWallet } from '@solana/wallet-adapter-react'
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui'
+import bs58 from 'bs58'
 import './TokenDetail.css'
 
 const API_BASE = '/api'
@@ -89,15 +91,17 @@ function shortenAddr(addr) {
 }
 
 export default function TokenDetail({ token, onBack }) {
-  const [chartData, setChartData] = useState([])
-  const [chartLoading, setChartLoading] = useState(true)
-  const [range, setRange] = useState('24h')
-  const [priceChange, setPriceChange] = useState(0)
+  const { publicKey, signMessage, connected } = useWallet()
+  const [chartInterval, setChartInterval] = useState('15m')
   const [copied, setCopied] = useState(false)
   const [activeTab, setActiveTab] = useState('txns')
   const [freshToken, setFreshToken] = useState(token)
   const [transactions, setTransactions] = useState([])
   const [txnLoading, setTxnLoading] = useState(false)
+  const [showUpdateModal, setShowUpdateModal] = useState(false)
+  const [updateForm, setUpdateForm] = useState({ description: '', twitter: '', telegram: '', website: '' })
+  const [updateSaving, setUpdateSaving] = useState(false)
+  const [updateMsg, setUpdateMsg] = useState(null)
 
   // Fetch fresh token data
   useEffect(() => {
@@ -114,33 +118,6 @@ export default function TokenDetail({ token, onBack }) {
     fetchToken()
   }, [token])
 
-  useEffect(() => {
-    if (!token) return
-    async function fetchHistory() {
-      setChartLoading(true)
-      try {
-        const res = await fetch(`${API_BASE}/token/${token.mint}/history?range=${range}`)
-        if (!res.ok) throw new Error('Failed')
-        const data = await res.json()
-        setPriceChange(data.priceChange || 0)
-        setChartData(
-          (data.history || []).map(p => ({
-            time: p.time,
-            open: p.open,
-            high: p.high,
-            low: p.low,
-            close: p.close,
-            volume: p.volume || 0,
-          }))
-        )
-      } catch {
-        setChartData([])
-      } finally {
-        setChartLoading(false)
-      }
-    }
-    fetchHistory()
-  }, [token, range])
 
   // Fetch transactions
   useEffect(() => {
@@ -164,6 +141,56 @@ export default function TokenDetail({ token, onBack }) {
     const interval = setInterval(fetchTxns, 30000)
     return () => { cancelled = true; clearInterval(interval) }
   }, [token])
+
+  const openUpdateModal = () => {
+    const t = freshToken || token
+    setUpdateForm({
+      description: t.description || '',
+      twitter: t.twitter || '',
+      telegram: t.telegram || '',
+      website: t.website || '',
+    })
+    setUpdateMsg(null)
+    setShowUpdateModal(true)
+  }
+
+  const handleUpdateSubmit = async (e) => {
+    e.preventDefault()
+    if (!connected || !publicKey || !signMessage) {
+      setUpdateMsg({ type: 'error', text: 'Please connect the token creator wallet first.' })
+      return
+    }
+    setUpdateSaving(true)
+    setUpdateMsg(null)
+    try {
+      const message = `Update token info for ${token.mint} on PumpDex`
+      const msgBytes = new TextEncoder().encode(message)
+      const signatureBytes = await signMessage(msgBytes)
+      const signature = bs58.encode(signatureBytes)
+
+      const res = await fetch(`${API_BASE}/token/${token.mint}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...updateForm,
+          walletAddress: publicKey.toBase58(),
+          signature,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Update failed')
+      }
+      const updated = await res.json()
+      setFreshToken(prev => ({ ...prev, ...updated }))
+      setUpdateMsg({ type: 'success', text: 'Token info updated successfully!' })
+      setTimeout(() => setShowUpdateModal(false), 1500)
+    } catch (err) {
+      setUpdateMsg({ type: 'error', text: err.message })
+    } finally {
+      setUpdateSaving(false)
+    }
+  }
 
   if (!token) return null
 
@@ -208,18 +235,25 @@ export default function TokenDetail({ token, onBack }) {
         <div className="td__chart-area">
           <div className="td__chart-controls">
             <div className="td__ranges">
-              {['1h', '6h', '24h', '7d'].map(r => (
+              {['1m', '5m', '15m', '1H', '4H', '1D'].map(r => (
                 <button
                   key={r}
-                  className={`td__range ${range === r ? 'td__range--active' : ''}`}
-                  onClick={() => setRange(r)}
+                  className={`td__range ${chartInterval === r ? 'td__range--active' : ''}`}
+                  onClick={() => setChartInterval(r)}
                 >
-                  {r.toUpperCase()}
+                  {r}
                 </button>
               ))}
             </div>
           </div>
-          <PriceChart data={chartData} loading={chartLoading} height={460} />
+          <div className="td__chart-widget">
+            <iframe
+              key={`${t.mint}-${chartInterval}`}
+              src={`https://birdeye.so/tv-widget/${t.mint}?chain=solana&viewMode=pair&chartInterval=${chartInterval}&chartType=CANDLE&chartTimezone=America%2FNew_York&chartLeftToolbar=show&theme=dark`}
+              allowFullScreen
+              style={{ width: '100%', height: '460px', border: 'none', borderRadius: '8px' }}
+            />
+          </div>
 
           {/* Tabs below chart */}
           <div className="td__bottom-tabs">
@@ -346,8 +380,8 @@ export default function TokenDetail({ token, onBack }) {
           <div className="td__price-section">
             <span className="td__price">{formatPrice(t.price)}</span>
             <span className="td__price-sol">{priceInSol > 0 ? `${priceInSol.toFixed(8)} SOL` : '-'}</span>
-            <span className={`td__price-change ${priceChange >= 0 ? 'td__price-change--up' : 'td__price-change--down'}`}>
-              {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
+            <span className={`td__price-change ${parseFloat(t.change_24h) >= 0 ? 'td__price-change--up' : 'td__price-change--down'}`}>
+              {parseFloat(t.change_24h) >= 0 ? '+' : ''}{(parseFloat(t.change_24h) || 0).toFixed(2)}%
             </span>
           </div>
 
@@ -413,12 +447,126 @@ export default function TokenDetail({ token, onBack }) {
           </div>
 
           {/* Update info */}
-          <button className="td__update-btn">
+          <button className="td__update-btn" onClick={openUpdateModal}>
             Update Token Info
             <span className="td__free-tag">FREE</span>
           </button>
         </div>
       </div>
+
+      {/* Update Modal */}
+      {showUpdateModal && (
+        <div className="td__modal-overlay" onClick={() => setShowUpdateModal(false)}>
+          <div className="td__modal" onClick={e => e.stopPropagation()}>
+            <div className="td__modal-header">
+              <h3 className="td__modal-title">
+                Update Token Info
+                <span className="td__free-tag">FREE</span>
+              </h3>
+              <button className="td__modal-close" onClick={() => setShowUpdateModal(false)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            <p className="td__modal-sub">
+              Update your token's info on PumpDex — completely free. Connect the <strong>creator wallet</strong> to verify ownership.
+            </p>
+
+            <div className="td__modal-wallet">
+              <WalletMultiButton />
+              {connected && publicKey && (
+                <span className="td__modal-wallet-addr">
+                  {publicKey.toBase58().slice(0, 4)}...{publicKey.toBase58().slice(-4)}
+                </span>
+              )}
+            </div>
+
+            <form className="td__modal-form" onSubmit={handleUpdateSubmit}>
+              <div className="td__modal-field">
+                <label className="td__modal-label">Description</label>
+                <textarea
+                  className="td__modal-textarea"
+                  placeholder="Describe your token, project, or community..."
+                  value={updateForm.description}
+                  onChange={e => setUpdateForm(f => ({ ...f, description: e.target.value }))}
+                  rows={3}
+                  maxLength={500}
+                />
+                <span className="td__modal-hint">{updateForm.description.length}/500</span>
+              </div>
+
+              <div className="td__modal-field">
+                <label className="td__modal-label">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                  Twitter / X
+                </label>
+                <input
+                  className="td__modal-input"
+                  type="text"
+                  placeholder="username (without @)"
+                  value={updateForm.twitter}
+                  onChange={e => setUpdateForm(f => ({ ...f, twitter: e.target.value.replace(/^@/, '') }))}
+                />
+              </div>
+
+              <div className="td__modal-field">
+                <label className="td__modal-label">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                  Telegram
+                </label>
+                <input
+                  className="td__modal-input"
+                  type="text"
+                  placeholder="group or channel name"
+                  value={updateForm.telegram}
+                  onChange={e => setUpdateForm(f => ({ ...f, telegram: e.target.value }))}
+                />
+              </div>
+
+              <div className="td__modal-field">
+                <label className="td__modal-label">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                  Website
+                </label>
+                <input
+                  className="td__modal-input"
+                  type="url"
+                  placeholder="https://yourproject.com"
+                  value={updateForm.website}
+                  onChange={e => setUpdateForm(f => ({ ...f, website: e.target.value }))}
+                />
+              </div>
+
+              {updateMsg && (
+                <div className={`td__modal-msg td__modal-msg--${updateMsg.type}`}>
+                  {updateMsg.type === 'success' ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+                  )}
+                  {updateMsg.text}
+                </div>
+              )}
+
+              <button className="td__modal-submit" type="submit" disabled={updateSaving || !connected}>
+                {updateSaving ? (
+                  <>
+                    <div className="td__modal-spinner" />
+                    Signing & Saving...
+                  </>
+                ) : !connected ? (
+                  'Connect Wallet to Save'
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M20 6 9 17l-5-5"/></svg>
+                    Sign & Save Changes
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
