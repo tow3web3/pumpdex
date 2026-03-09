@@ -1,8 +1,19 @@
 import { neon } from '@neondatabase/serverless'
 
 const DATABASE_URL = process.env.DATABASE_URL
-const HELIUS_KEY = process.env.HELIUS_KEY
+const HELIUS_KEYS = [process.env.HELIUS_KEY, process.env.HELIUS_KEY_FALLBACK].filter(Boolean)
+const HELIUS_KEY = HELIUS_KEYS[0]
 const HELIUS_RPC = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}`
+
+async function heliusFetch(url, opts) {
+  for (const key of HELIUS_KEYS) {
+    const u = url.replace(HELIUS_KEY, key)
+    const res = await fetch(u, opts)
+    if (res.ok) return res
+    console.warn(`Helius key ${key.slice(0, 8)}... failed: ${res.status}, trying next...`)
+  }
+  throw new Error('All Helius keys failed')
+}
 
 const sql = neon(DATABASE_URL)
 const PUMPFUN = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'

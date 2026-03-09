@@ -201,6 +201,89 @@
   font-size: 13px;
 }
 
+.td__txn-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: td-spin 0.8s linear infinite;
+}
+
+@keyframes td-spin {
+  to { transform: rotate(360deg); }
+}
+
+.td__txn-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.td__txn-table-head {
+  display: grid;
+  grid-template-columns: 50px 1fr 1fr 100px 80px;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.td__txn-item {
+  display: grid;
+  grid-template-columns: 50px 1fr 1fr 100px 80px;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+  color: var(--text-secondary);
+  transition: background 0.1s ease;
+  align-items: center;
+}
+
+.td__txn-item:hover {
+  background: var(--bg-secondary);
+}
+
+.td__txn-type {
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.td__txn-type--buy {
+  color: var(--accent);
+}
+
+.td__txn-type--sell {
+  color: var(--red);
+}
+
+.td__txn-amt {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.td__txn-sol {
+  color: var(--text-secondary);
+}
+
+.td__txn-wallet {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.td__txn-time {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: right;
+}
+
 .td__info-panel {
   padding: 16px;
 }

@@ -120,22 +120,149 @@ async function getPriceChanges(mints) {
   return result
 }
 
+// Helper: call Helius RPC with fallback keys
+async function heliusRpc(method, params) {
+  const keys = [process.env.HELIUS_KEY, process.env.HELIUS_KEY_FALLBACK].filter(Boolean)
+  for (const key of keys) {
+    try {
+      const res = await fetch(`https://mainnet.helius-rpc.com/?api-key=${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+      })
+      if (!res.ok) continue
+      const data = await res.json()
+      if (data.result) return data.result
+    } catch {}
+  }
+  return null
+}
+
+// Fetch a token live — try PumpFun API first for pump tokens, then Helius DAS
+async function fetchTokenOnChain(mint) {
+  const isPumpToken = mint.endsWith('pump')
+
+  if (isPumpToken) {
+    try {
+      const pfRes = await fetch(`https://frontend-api-v3.pump.fun/coins/${mint}`)
+      if (pfRes.ok) {
+        const pf = await pfRes.json()
+        if (pf && pf.name) {
+          const totalSupply = (pf.total_supply || 1e15) / 1e6
+          const virtualSol = (pf.virtual_sol_reserves || 0) / 1e9
+          const virtualTokens = (pf.virtual_token_reserves || 1) / 1e6
+          const priceInSol = virtualSol / virtualTokens
+          const usdMcap = pf.usd_market_cap || 0
+          const priceUsd = usdMcap > 0 ? usdMcap / totalSupply : 0
+
+          let holderCount = 0
+          try {
+            const tokenAccounts = await heliusRpc('getTokenAccounts', { mint, limit: 1000 })
+            if (tokenAccounts?.token_accounts) {
+              holderCount = Math.min(tokenAccounts.token_accounts.length, 1000)
+            }
+          } catch {}
+
+          return {
+            mint,
+            name: pf.name,
+            symbol: pf.symbol || '???',
+            description: pf.description || null,
+            image_uri: pf.image_uri || null,
+            metadata_uri: pf.metadata_uri || null,
+            twitter: pf.twitter && pf.twitter !== 'undefined' ? pf.twitter : null,
+            telegram: pf.telegram && pf.telegram !== 'undefined' ? pf.telegram : null,
+            website: pf.website && pf.website !== 'undefined' ? pf.website : null,
+            price: priceUsd,
+            price_sol: priceInSol,
+            supply: totalSupply,
+            market_cap: usdMcap,
+            market_cap_sol: pf.market_cap || 0,
+            volume_24h: 0,
+            liquidity: 0,
+            bonding_curve_progress: pf.bonding_curve_progress || 0,
+            holder_count: holderCount,
+            is_migrated: pf.complete === true,
+            raydium_pool: pf.raydium_pool || null,
+            created_at: pf.created_timestamp ? new Date(pf.created_timestamp).toISOString() : null,
+            change_5m: 0, change_1h: 0, change_6h: 0, change_24h: 0,
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // Fallback: Helius DAS + Jupiter
+  const asset = await heliusRpc('getAsset', { id: mint })
+  if (!asset) return null
+
+  const meta = asset.content?.metadata || {}
+  const ti = asset.token_info || {}
+  const pi = ti.price_info || {}
+  const decimals = ti.decimals || 6
+  const supply = (ti.supply || 0) / Math.pow(10, decimals)
+  let price = pi.price_per_token || 0
+
+  try {
+    const jRes = await fetch(`https://api.jup.ag/price/v2?ids=${mint}`)
+    if (jRes.ok) {
+      const jData = await jRes.json()
+      const jp = jData.data?.[mint]?.price
+      if (jp) price = parseFloat(jp)
+    }
+  } catch {}
+
+  let holderCount = 0
+  try {
+    const tokenAccounts = await heliusRpc('getTokenAccounts', { mint, limit: 1000 })
+    if (tokenAccounts?.token_accounts) {
+      holderCount = Math.min(tokenAccounts.token_accounts.length, 1000)
+    }
+  } catch {}
+
+  return {
+    mint: asset.id || mint,
+    name: meta.name || 'Unknown',
+    symbol: meta.symbol || '???',
+    description: meta.description || null,
+    image_uri: asset.content?.links?.image || asset.content?.files?.[0]?.uri || null,
+    metadata_uri: asset.content?.json_uri || null,
+    twitter: null, telegram: null, website: null,
+    price, supply,
+    market_cap: price * supply,
+    volume_24h: 0,
+    liquidity: 0,
+    holder_count: holderCount,
+    is_migrated: true,
+    raydium_pool: null,
+    created_at: asset.created_at || null,
+    change_5m: 0, change_1h: 0, change_6h: 0, change_24h: 0,
+  }
+}
+
 // GET /api/token/:mint
 app.get('/api/token/:mint', async (req, res) => {
   try {
     const rows = await sql`SELECT * FROM tokens WHERE mint = ${req.params.mint}`
-    if (rows.length === 0) return res.status(404).json({ error: 'Not found' })
-    const t = rows[0]
-    const hp = (await getPriceChanges([t.mint]))[t.mint] || {}
-    const currentPrice = parseFloat(t.price) || 0
-    const pctChange = (old) => old && old > 0 ? Math.round(((currentPrice - old) / old) * 10000) / 100 : 0
-    res.json({
-      ...t,
-      change_5m: pctChange(hp.change_5m),
-      change_1h: pctChange(hp.change_1h),
-      change_6h: pctChange(hp.change_6h),
-      change_24h: pctChange(hp.change_24h),
-    })
+    if (rows.length > 0) {
+      const t = rows[0]
+      const hp = (await getPriceChanges([t.mint]))[t.mint] || {}
+      const currentPrice = parseFloat(t.price) || 0
+      const pctChange = (old) => old && old > 0 ? Math.round(((currentPrice - old) / old) * 10000) / 100 : 0
+      return res.json({
+        ...t,
+        change_5m: pctChange(hp.change_5m),
+        change_1h: pctChange(hp.change_1h),
+        change_6h: pctChange(hp.change_6h),
+        change_24h: pctChange(hp.change_24h),
+      })
+    }
+
+    // Not in DB — fetch live from chain
+    const onChain = await fetchTokenOnChain(req.params.mint)
+    if (onChain) return res.json(onChain)
+
+    res.status(404).json({ error: 'Not found' })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
@@ -179,6 +306,21 @@ app.get('/api/token/:mint/history', async (req, res) => {
     }
     const candles = Object.values(buckets).sort((a, b) => a.time - b.time)
 
+    // When candles are flat (single data point per bucket), use previous
+    // candle's close as open and add wicks so candlesticks render visually
+    for (let i = 0; i < candles.length; i++) {
+      const c = candles[i]
+      if (c.open === c.high && c.high === c.low && c.low === c.close) {
+        if (i > 0) {
+          c.open = candles[i - 1].close
+        }
+        const spread = Math.abs(c.close - c.open)
+        const wick = spread > 0 ? spread * 0.3 : c.close * 0.001
+        c.high = Math.max(c.open, c.close) + wick
+        c.low = Math.min(c.open, c.close) - wick
+      }
+    }
+
     res.json({
       mint: req.params.mint, range,
       priceChange: Math.round(priceChange * 100) / 100,
@@ -186,6 +328,126 @@ app.get('/api/token/:mint/history', async (req, res) => {
       history: candles,
     })
   } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/tokens/live — fetch trending tokens live from PumpFun
+app.get('/api/tokens/live', async (req, res) => {
+  const { sort = 'last_trade_timestamp', limit = '50', offset = '0', status = 'all' } = req.query
+
+  const sortMap = {
+    market_cap: 'market_cap',
+    created_at: 'created_timestamp',
+    last_trade_timestamp: 'last_trade_timestamp',
+    trending: 'last_trade_timestamp',
+  }
+  const pfSort = sortMap[sort] || 'last_trade_timestamp'
+  const lim = Math.min(parseInt(limit) || 50, 100)
+  const off = parseInt(offset) || 0
+
+  try {
+    const url = `https://frontend-api-v3.pump.fun/coins?offset=${off}&limit=${lim}&sort=${pfSort}&order=DESC&includeNsfw=false`
+    const pfRes = await fetch(url)
+    if (!pfRes.ok) throw new Error(`PumpFun API returned ${pfRes.status}`)
+    const coins = await pfRes.json()
+
+    const tokens = coins.map(pf => {
+      const totalSupply = (pf.total_supply || 1e15) / 1e6
+      const virtualSol = (pf.virtual_sol_reserves || 0) / 1e9
+      const virtualTokens = (pf.virtual_token_reserves || 1) / 1e6
+      const priceInSol = virtualSol / virtualTokens
+      const usdMcap = pf.usd_market_cap || 0
+      const priceUsd = usdMcap > 0 ? usdMcap / totalSupply : 0
+
+      return {
+        mint: pf.mint,
+        name: pf.name || 'Unknown',
+        symbol: pf.symbol || '???',
+        description: pf.description || null,
+        image_uri: pf.image_uri || null,
+        price: priceUsd,
+        price_sol: priceInSol,
+        supply: totalSupply,
+        market_cap: usdMcap,
+        market_cap_sol: pf.market_cap || 0,
+        volume_24h: 0,
+        liquidity: 0,
+        bonding_curve_progress: pf.bonding_curve_progress || 0,
+        holder_count: 0,
+        is_migrated: pf.complete === true,
+        raydium_pool: pf.raydium_pool || null,
+        created_at: pf.created_timestamp ? new Date(pf.created_timestamp).toISOString() : null,
+        last_trade: pf.last_trade_timestamp ? new Date(pf.last_trade_timestamp).toISOString() : null,
+        change_5m: 0, change_1h: 0, change_6h: 0, change_24h: 0,
+      }
+    })
+
+    const filtered = status === 'all' ? tokens
+      : status === 'migrated' ? tokens.filter(t => t.is_migrated)
+      : tokens.filter(t => !t.is_migrated)
+
+    res.json({ tokens: filtered, total: filtered.length, live: true })
+  } catch (e) {
+    console.error('Live tokens error:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/token/:mint/transactions
+app.get('/api/token/:mint/transactions', async (req, res) => {
+  const keys = [process.env.HELIUS_KEY, process.env.HELIUS_KEY_FALLBACK].filter(Boolean)
+  if (!keys.length) {
+    return res.status(500).json({ error: 'HELIUS_KEY not configured' })
+  }
+
+  try {
+    const mint = req.params.mint
+    let rawTxns = null
+    for (const key of keys) {
+      const url = `https://api.helius.xyz/v0/addresses/${mint}/transactions?api-key=${key}&limit=50&type=SWAP`
+      const response = await fetch(url)
+      if (response.ok) {
+        rawTxns = await response.json()
+        break
+      }
+      console.warn(`Helius key ${key.slice(0, 8)}... failed: ${response.status}`)
+    }
+    if (!rawTxns) throw new Error('All Helius keys failed')
+
+    const transactions = rawTxns.map(tx => {
+      const swap = tx.events?.swap || null
+      const nativeTransfers = tx.nativeTransfers || []
+      const tokenTransfers = tx.tokenTransfers || []
+
+      const tokenTx = tokenTransfers.find(t => t.mint === mint)
+      const tokenAmount = tokenTx ? tokenTx.tokenAmount : 0
+
+      const solTransfer = nativeTransfers.reduce((sum, t) => sum + (t.amount || 0), 0)
+      const solAmount = Math.abs(solTransfer) / 1e9
+
+      let type = 'unknown'
+      if (swap) {
+        const isTokenIn = swap.tokenInputs?.some(t => t.mint === mint)
+        type = isTokenIn ? 'sell' : 'buy'
+      } else if (tokenTx) {
+        type = tokenTx.tokenAmount > 0 ? 'buy' : 'sell'
+      }
+
+      return {
+        signature: tx.signature,
+        type,
+        tokenAmount: Math.abs(tokenAmount),
+        solAmount,
+        timestamp: tx.timestamp,
+        wallet: tx.feePayer || '',
+        description: tx.description || '',
+      }
+    }).filter(tx => tx.type === 'buy' || tx.type === 'sell')
+
+    res.json({ mint, transactions })
+  } catch (e) {
+    console.error('Transactions error:', e.message)
     res.status(500).json({ error: e.message })
   }
 })

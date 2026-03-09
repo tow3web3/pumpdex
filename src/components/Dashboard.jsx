@@ -64,33 +64,60 @@ export default function Dashboard({ onSelectToken }) {
   const [tab, setTab] = useState('trending')
   const [timeRange, setTimeRange] = useState('24h')
   const [stats, setStats] = useState({ volume: 0, txns: 0 })
+  const [liveMode, setLiveMode] = useState(true)
+  const [lastUpdate, setLastUpdate] = useState(null)
+  const [pulse, setPulse] = useState(false)
 
   const fetchTokens = useCallback(async () => {
     try {
-      setLoading(true)
-      const params = new URLSearchParams({
-        sort,
-        order,
-        limit: '50',
-        offset: '0',
-        ...(search && { search }),
-        ...(filter !== 'all' && { status: filter }),
-      })
-      const res = await fetch(`${API_BASE}/tokens?${params}`)
-      if (!res.ok) throw new Error('Failed')
-      const data = await res.json()
+      if (tokens.length > 0) setLoading(false) // Don't show spinner on refresh
+      else setLoading(true)
+
+      let data
+      if (liveMode && !search) {
+        // Live mode: fetch from PumpFun API
+        const pfSort = tab === 'newest' ? 'created_at' : 'last_trade_timestamp'
+        const params = new URLSearchParams({
+          sort: pfSort,
+          limit: '50',
+          offset: '0',
+          ...(filter !== 'all' && { status: filter }),
+        })
+        const res = await fetch(`${API_BASE}/tokens/live?${params}`)
+        if (!res.ok) throw new Error('Failed')
+        data = await res.json()
+      } else {
+        // DB mode: use existing endpoint (for search or when live is off)
+        const params = new URLSearchParams({
+          sort,
+          order,
+          limit: '50',
+          offset: '0',
+          ...(search && { search }),
+          ...(filter !== 'all' && { status: filter }),
+        })
+        const res = await fetch(`${API_BASE}/tokens?${params}`)
+        if (!res.ok) throw new Error('Failed')
+        data = await res.json()
+      }
+
       setTokens(data.tokens || [])
       setTotal(data.total || 0)
+      setLastUpdate(new Date())
 
-      // Calculate stats from data
+      // Flash the pulse indicator
+      setPulse(true)
+      setTimeout(() => setPulse(false), 1000)
+
       const vol = (data.tokens || []).reduce((sum, t) => sum + (parseFloat(t.volume_24h) || 0), 0)
       setStats({ volume: vol, txns: (data.tokens || []).length * 150 })
     } catch {
-      setTokens([])
+      // Keep existing tokens on error
+      if (tokens.length === 0) setTokens([])
     } finally {
       setLoading(false)
     }
-  }, [search, sort, order, filter])
+  }, [search, sort, order, filter, liveMode, tab])
 
   useEffect(() => {
     const debounce = setTimeout(fetchTokens, 300)
@@ -98,9 +125,10 @@ export default function Dashboard({ onSelectToken }) {
   }, [fetchTokens])
 
   useEffect(() => {
-    const interval = setInterval(fetchTokens, 30000)
+    // Live mode: refresh every 10s. DB mode: every 30s
+    const interval = setInterval(fetchTokens, liveMode ? 10000 : 30000)
     return () => clearInterval(interval)
-  }, [fetchTokens])
+  }, [fetchTokens, liveMode])
 
   const handleSort = (col) => {
     if (sort === col) {
@@ -169,6 +197,20 @@ export default function Dashboard({ onSelectToken }) {
           </svg>
           <span className="dash__stat-label">Tokens:</span>
           <span className="dash__stat-value">{total.toLocaleString()}</span>
+        </div>
+        <div className="dash__stat dash__stat--right">
+          <button
+            className={`dash__live-toggle ${liveMode ? 'dash__live-toggle--active' : ''}`}
+            onClick={() => setLiveMode(!liveMode)}
+          >
+            <span className={`dash__live-dot ${pulse ? 'dash__live-dot--pulse' : ''}`} />
+            {liveMode ? 'LIVE' : 'DB'}
+          </button>
+          {lastUpdate && (
+            <span className="dash__last-update">
+              Updated {lastUpdate.toLocaleTimeString()}
+            </span>
+          )}
         </div>
       </div>
 

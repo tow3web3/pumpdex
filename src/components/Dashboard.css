@@ -129,6 +129,63 @@
   font-family: 'JetBrains Mono', monospace;
 }
 
+.dash__stat--right {
+  margin-left: auto;
+  gap: 12px;
+}
+
+.dash__live-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dash__live-toggle--active {
+  border-color: #00e67680;
+  background: rgba(0, 230, 118, 0.08);
+  color: #00e676;
+}
+
+.dash__live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background 0.2s ease;
+}
+
+.dash__live-toggle--active .dash__live-dot {
+  background: #00e676;
+  box-shadow: 0 0 6px #00e67680;
+}
+
+.dash__live-dot--pulse {
+  animation: livePulse 1s ease-out;
+}
+
+@keyframes livePulse {
+  0% { box-shadow: 0 0 0 0 #00e67680; }
+  70% { box-shadow: 0 0 0 8px #00e67600; }
+  100% { box-shadow: 0 0 0 0 #00e67600; }
+}
+
+.dash__last-update {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
 /* Filters */
 .dash__filters {
   display: flex;

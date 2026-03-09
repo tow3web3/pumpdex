@@ -104,11 +104,8 @@ export default function PriceChart({ data, loading, height = 300 }) {
       seriesRef.current = {}
     }
 
-    const chartHeight = isFullscreen ? window.innerHeight - 48 : height
-
     const chart = createChart(containerRef.current, {
-      width: containerRef.current.clientWidth,
-      height: chartHeight,
+      autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#6b6b80',
@@ -263,25 +260,14 @@ export default function PriceChart({ data, loading, height = 300 }) {
     chart.timeScale().fitContent()
     chartRef.current = chart
 
-    const handleResize = () => {
-      if (containerRef.current && chartRef.current) {
-        chartRef.current.applyOptions({
-          width: containerRef.current.clientWidth,
-          height: isFullscreen ? window.innerHeight - 48 : height,
-        })
-      }
-    }
-
-    window.addEventListener('resize', handleResize)
     return () => {
-      window.removeEventListener('resize', handleResize)
       if (chartRef.current) {
         chartRef.current.remove()
         chartRef.current = null
         seriesRef.current = {}
       }
     }
-  }, [data, height, chartType, activeIndicators, isFullscreen])
+  }, [data, chartType, activeIndicators])
 
   return (
     <div className={`price-chart ${isFullscreen ? 'price-chart--fullscreen' : ''}`} ref={wrapperRef}>
@@ -373,7 +359,7 @@ export default function PriceChart({ data, loading, height = 300 }) {
       <div
         ref={containerRef}
         className="price-chart__container"
-        style={{ visibility: data && data.length > 0 ? 'visible' : 'hidden', height: isFullscreen ? 'calc(100vh - 48px)' : `${height}px` }}
+        style={{ visibility: data && data.length > 0 ? 'visible' : 'hidden', height: isFullscreen ? 'calc(100vh - 48px)' : height }}
       />
     </div>
   )

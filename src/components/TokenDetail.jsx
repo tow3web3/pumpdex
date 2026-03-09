@@ -54,6 +54,40 @@ function ChangeTag({ value, label }) {
   )
 }
 
+function formatTokenAmt(val) {
+  const n = parseFloat(val)
+  if (!n) return '0'
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
+function formatSol(val) {
+  const n = parseFloat(val)
+  if (!n) return '0'
+  if (n >= 1000) return `${(n / 1000).toFixed(2)}K`
+  if (n >= 1) return n.toFixed(2)
+  return n.toFixed(4)
+}
+
+function txnTimeAgo(ts) {
+  if (!ts) return '-'
+  const diff = Date.now() - ts * 1000
+  const secs = Math.floor(diff / 1000)
+  if (secs < 60) return `${secs}s ago`
+  const mins = Math.floor(secs / 60)
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+function shortenAddr(addr) {
+  if (!addr || addr.length < 8) return addr || ''
+  return `${addr.slice(0, 4)}...${addr.slice(-4)}`
+}
+
 export default function TokenDetail({ token, onBack }) {
   const [chartData, setChartData] = useState([])
   const [chartLoading, setChartLoading] = useState(true)
@@ -62,6 +96,8 @@ export default function TokenDetail({ token, onBack }) {
   const [copied, setCopied] = useState(false)
   const [activeTab, setActiveTab] = useState('txns')
   const [freshToken, setFreshToken] = useState(token)
+  const [transactions, setTransactions] = useState([])
+  const [txnLoading, setTxnLoading] = useState(false)
 
   // Fetch fresh token data
   useEffect(() => {
@@ -94,6 +130,7 @@ export default function TokenDetail({ token, onBack }) {
             high: p.high,
             low: p.low,
             close: p.close,
+            volume: p.volume || 0,
           }))
         )
       } catch {
@@ -104,6 +141,29 @@ export default function TokenDetail({ token, onBack }) {
     }
     fetchHistory()
   }, [token, range])
+
+  // Fetch transactions
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    async function fetchTxns() {
+      setTxnLoading(true)
+      try {
+        const res = await fetch(`${API_BASE}/token/${token.mint}/transactions`)
+        if (!res.ok) throw new Error('Failed')
+        const data = await res.json()
+        if (!cancelled) setTransactions(data.transactions || [])
+      } catch {
+        if (!cancelled) setTransactions([])
+      } finally {
+        if (!cancelled) setTxnLoading(false)
+      }
+    }
+    fetchTxns()
+    // Auto-refresh every 30s
+    const interval = setInterval(fetchTxns, 30000)
+    return () => { cancelled = true; clearInterval(interval) }
+  }, [token])
 
   if (!token) return null
 
@@ -176,9 +236,45 @@ export default function TokenDetail({ token, onBack }) {
 
           <div className="td__bottom-content">
             {activeTab === 'txns' && (
-              <div className="td__txn-placeholder">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-                <span>Transaction history coming soon</span>
+              <div className="td__txn-list">
+                {txnLoading && transactions.length === 0 ? (
+                  <div className="td__txn-placeholder">
+                    <div className="td__txn-spinner" />
+                    <span>Loading transactions...</span>
+                  </div>
+                ) : transactions.length === 0 ? (
+                  <div className="td__txn-placeholder">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                    <span>No transactions found</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="td__txn-table-head">
+                      <span>Type</span>
+                      <span>Tokens</span>
+                      <span>SOL</span>
+                      <span>Wallet</span>
+                      <span>Time</span>
+                    </div>
+                    {transactions.map(tx => (
+                      <a
+                        key={tx.signature}
+                        className={`td__txn-item ${tx.type === 'buy' ? 'td__txn-item--buy' : 'td__txn-item--sell'}`}
+                        href={`https://solscan.io/tx/${tx.signature}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <span className={`td__txn-type ${tx.type === 'buy' ? 'td__txn-type--buy' : 'td__txn-type--sell'}`}>
+                          {tx.type === 'buy' ? 'Buy' : 'Sell'}
+                        </span>
+                        <span className="td__txn-amt">{formatTokenAmt(tx.tokenAmount)}</span>
+                        <span className="td__txn-sol">{formatSol(tx.solAmount)} SOL</span>
+                        <span className="td__txn-wallet">{shortenAddr(tx.wallet)}</span>
+                        <span className="td__txn-time">{txnTimeAgo(tx.timestamp)}</span>
+                      </a>
+                    ))}
+                  </>
+                )}
               </div>
             )}
             {activeTab === 'holders' && (

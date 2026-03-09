@@ -12,6 +12,12 @@ export default function Hero({ onLaunchApp }) {
 
   const handleSearch = (e) => {
     e.preventDefault()
+    const q = search.trim()
+    // Detect Solana address (base58, 32-44 chars)
+    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(q)) {
+      window.location.hash = `#token/${q}`
+      return
+    }
     onLaunchApp()
   }
 
