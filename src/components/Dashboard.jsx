@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import './Dashboard.css'
 
 const API_BASE = '/api'
+const DEXSCREENER_API = 'https://api.dexscreener.com/tokens/v1/solana'
 
 function formatPrice(price) {
   const n = parseFloat(price)
@@ -101,7 +102,7 @@ export default function Dashboard({ onSelectToken }) {
         data = await res.json()
       }
 
-      setTokens(data.tokens || [])
+      const rawTokens = data.tokens || []
       setTotal(data.total || 0)
       setLastUpdate(new Date())
 
@@ -109,8 +110,43 @@ export default function Dashboard({ onSelectToken }) {
       setPulse(true)
       setTimeout(() => setPulse(false), 1000)
 
-      const vol = (data.tokens || []).reduce((sum, t) => sum + (parseFloat(t.volume_24h) || 0), 0)
-      setStats({ volume: vol, txns: (data.tokens || []).length * 150 })
+      // Enrich with DexScreener data (volume, liquidity, price changes)
+      try {
+        // DexScreener supports comma-separated mints (up to 30)
+        const mints = rawTokens.slice(0, 30).map(t => t.mint)
+        if (mints.length > 0) {
+          const dxRes = await fetch(`${DEXSCREENER_API}/${mints.join(',')}`)
+          if (dxRes.ok) {
+            const pairs = await dxRes.json()
+            // Build a map: mint -> best pair data
+            const dxMap = {}
+            for (const p of (pairs || [])) {
+              const mint = p.baseToken?.address
+              if (!mint) continue
+              if (!dxMap[mint] || (p.liquidity?.usd || 0) > (dxMap[mint].liquidity?.usd || 0)) {
+                dxMap[mint] = p
+              }
+            }
+            for (const t of rawTokens) {
+              const p = dxMap[t.mint]
+              if (!p) continue
+              t.volume_24h = p.volume?.h24 || t.volume_24h || 0
+              t.liquidity = p.liquidity?.usd || t.liquidity || 0
+              t.change_5m = p.priceChange?.m5 ?? t.change_5m ?? 0
+              t.change_1h = p.priceChange?.h1 ?? t.change_1h ?? 0
+              t.change_6h = p.priceChange?.h6 ?? t.change_6h ?? 0
+              t.change_24h = p.priceChange?.h24 ?? t.change_24h ?? 0
+              if (p.priceUsd) t.price = parseFloat(p.priceUsd)
+              if (p.marketCap) t.market_cap = p.marketCap
+            }
+          }
+        }
+      } catch {}
+
+      setTokens(rawTokens)
+
+      const vol = rawTokens.reduce((sum, t) => sum + (parseFloat(t.volume_24h) || 0), 0)
+      setStats({ volume: vol })
     } catch {
       // Keep existing tokens on error
       if (tokens.length === 0) setTokens([])
@@ -195,13 +231,6 @@ export default function Dashboard({ onSelectToken }) {
           </svg>
           <span className="dash__stat-label">24H Volume:</span>
           <span className="dash__stat-value">{formatCompact(stats.volume)}</span>
-        </div>
-        <div className="dash__stat">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m2 14 6-6 6 6 6-6"/>
-          </svg>
-          <span className="dash__stat-label">Tokens:</span>
-          <span className="dash__stat-value">{total.toLocaleString()}</span>
         </div>
         <div className="dash__stat dash__stat--right">
           <button
