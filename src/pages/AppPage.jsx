@@ -6,6 +6,7 @@ import Sidebar from '../components/Sidebar'
 import TickerBar from '../components/TickerBar'
 import Dashboard from '../components/Dashboard'
 import TokenDetail from '../components/TokenDetail'
+import AppFooter from '../components/AppFooter'
 import './AppPage.css'
 
 const API_BASE = '/api'
@@ -252,6 +253,7 @@ export default function AppPage({ onBack }) {
         </main>
       </div>
       {showUpdateModal && <UpdateInfoModal onClose={() => setShowUpdateModal(false)} />}
+      <AppFooter />
     </div>
   )
 }

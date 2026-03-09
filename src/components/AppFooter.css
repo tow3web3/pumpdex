@@ -1,0 +1,57 @@
+.app-footer {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 6px 16px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
+}
+
+.app-footer__coin {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.app-footer__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.app-footer__label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.app-footer__price {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.app-footer__change {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.app-footer__change--up {
+  color: var(--accent);
+}
+
+.app-footer__change--down {
+  color: var(--red);
+}
+
+.app-footer__brand {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  opacity: 0.5;
+  letter-spacing: 0.5px;
+}
